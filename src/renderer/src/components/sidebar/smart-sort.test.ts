@@ -522,12 +522,12 @@ describe('buildWorktreeComparator — recent (lastActivityAt)', () => {
 describe('effectiveRecentActivity — create-grace floor', () => {
   it('returns lastActivityAt when createdAt is absent', () => {
     const wt = makeWorktree({ id: 'old', lastActivityAt: 12345 })
-    expect(effectiveRecentActivity(wt)).toBe(12345)
+    expect(effectiveRecentActivity(wt, NOW)).toBe(12345)
   })
 
   it('returns createdAt + CREATE_GRACE_MS when grace window exceeds lastActivityAt', () => {
     const wt = makeWorktree({ id: 'fresh', lastActivityAt: NOW, createdAt: NOW })
-    expect(effectiveRecentActivity(wt)).toBe(NOW + CREATE_GRACE_MS)
+    expect(effectiveRecentActivity(wt, NOW)).toBe(NOW + CREATE_GRACE_MS)
   })
 
   it('returns lastActivityAt when grace window has elapsed', () => {
@@ -536,7 +536,7 @@ describe('effectiveRecentActivity — create-grace floor', () => {
       createdAt: NOW - CREATE_GRACE_MS - 60_000,
       lastActivityAt: NOW - 1000
     })
-    expect(effectiveRecentActivity(wt)).toBe(NOW - 1000)
+    expect(effectiveRecentActivity(wt, NOW)).toBe(NOW - 1000)
   })
 
   it('returns lastActivityAt when real activity has surpassed the grace floor', () => {
@@ -545,7 +545,17 @@ describe('effectiveRecentActivity — create-grace floor', () => {
     const createdAt = NOW - 3 * 60 * 1000
     const wt = makeWorktree({ id: 'used', createdAt, lastActivityAt: NOW - 60_000 })
     // createdAt + GRACE_MS = NOW + 2min, which exceeds lastActivityAt (NOW - 1min).
-    expect(effectiveRecentActivity(wt)).toBe(createdAt + CREATE_GRACE_MS)
+    expect(effectiveRecentActivity(wt, NOW)).toBe(createdAt + CREATE_GRACE_MS)
+  })
+
+  it('returns lastActivityAt once the grace window has elapsed even when no other activity has occurred', () => {
+    // Bug-fix case: a worktree created days ago that was never touched after
+    // creation. Without the time-bound check, the floor would still apply and
+    // the worktree would rank as `createdAt + 5min` forever, masking truly
+    // fresher worktrees.
+    const createdAt = NOW - CREATE_GRACE_MS - 1
+    const wt = makeWorktree({ id: 'untouched', createdAt, lastActivityAt: createdAt })
+    expect(effectiveRecentActivity(wt, NOW)).toBe(createdAt)
   })
 })
 

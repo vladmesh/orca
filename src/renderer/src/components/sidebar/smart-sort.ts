@@ -21,13 +21,20 @@ export const CREATE_GRACE_MS = 5 * 60 * 1000
 
 /**
  * Rank a worktree in Recent sort using `lastActivityAt`, but with a floor of
- * `createdAt + CREATE_GRACE_MS` while that window is active. Returns
- * `lastActivityAt` unchanged for worktrees without `createdAt` (discovered on
- * disk, or persisted before this field existed).
+ * `createdAt + CREATE_GRACE_MS` *only during* the grace window (i.e. while
+ * `now < createdAt + CREATE_GRACE_MS`). Once the window has elapsed, returns
+ * `lastActivityAt` unchanged. Returns `lastActivityAt` unchanged for worktrees
+ * without `createdAt` (discovered on disk, or persisted before this field
+ * existed).
  */
-export function effectiveRecentActivity(worktree: Worktree): number {
+export function effectiveRecentActivity(worktree: Worktree, now: number): number {
   const { lastActivityAt, createdAt } = worktree
-  if (createdAt === undefined) {
+  // Why bound by now: a worktree with createdAt set but no subsequent activity
+  // should not retain artificially-high recency forever; the floor exists to
+  // absorb the noisy creation window only. Without this bound, a worktree
+  // created days ago and never touched would keep ranking as if its activity
+  // were `createdAt + 5min`, masking truly fresher worktrees indefinitely.
+  if (createdAt === undefined || now >= createdAt + CREATE_GRACE_MS) {
     return lastActivityAt
   }
   return Math.max(lastActivityAt, createdAt + CREATE_GRACE_MS)
@@ -301,7 +308,8 @@ export function buildWorktreeComparator(
               )
         return (
           scoreB - scoreA ||
-          effectiveRecentActivity(smartB.worktree) - effectiveRecentActivity(smartA.worktree) ||
+          effectiveRecentActivity(smartB.worktree, now) -
+            effectiveRecentActivity(smartA.worktree, now) ||
           a.displayName.localeCompare(b.displayName)
         )
       }
@@ -318,7 +326,7 @@ export function buildWorktreeComparator(
         // signal — bumped by bumpWorktreeActivity (PTY spawn, background
         // events) and by meaningful meta edits (comment, isUnread).
         return (
-          effectiveRecentActivity(b) - effectiveRecentActivity(a) ||
+          effectiveRecentActivity(b, now) - effectiveRecentActivity(a, now) ||
           a.displayName.localeCompare(b.displayName)
         )
       case 'repo': {

@@ -312,17 +312,14 @@ export class ClaudeRuntimeAuthService {
   }
 
   private writeRuntimeCredentials(contents: string): void {
-    // Why: every Claude pty spawn syncs auth, but credentials rarely change.
-    // Skipping the atomic rewrite when contents are unchanged avoids EPERM
-    // contention on Windows when a sibling Claude CLI or AV briefly holds
-    // .credentials.json open (issue #1507). The in-memory check covers the
-    // hot path; the on-disk check covers the first spawn after app restart.
-    if (this.lastWrittenCredentialsJson === contents) {
-      return
-    }
     const credentialsPath = this.pathResolver.getRuntimePaths().credentialsPath
     mkdirSync(dirname(credentialsPath), { recursive: true })
-    if (existsSync(credentialsPath) && readFileSync(credentialsPath, 'utf-8') === contents) {
+    // Why: repeated Claude spawns sync auth, but credentials rarely change.
+    // Skipping unchanged rewrites avoids Windows EPERM contention in #1507.
+    if (this.lastWrittenCredentialsJson === contents && existsSync(credentialsPath)) {
+      return
+    }
+    if (this.fileContentsEqual(credentialsPath, contents)) {
       this.lastWrittenCredentialsJson = contents
       return
     }
@@ -333,13 +330,19 @@ export class ClaudeRuntimeAuthService {
   private writeJson(targetPath: string, value: unknown): void {
     const serialized = `${JSON.stringify(value, null, 2)}\n`
     mkdirSync(dirname(targetPath), { recursive: true })
-    // Why: same Windows contention reasoning as writeRuntimeCredentials —
-    // skip the atomic rewrite when the on-disk content already matches
-    // (issue #1507).
-    if (existsSync(targetPath) && readFileSync(targetPath, 'utf-8') === serialized) {
+    // Why: same Windows contention reason as writeRuntimeCredentials.
+    if (this.fileContentsEqual(targetPath, serialized)) {
       return
     }
     writeFileAtomically(targetPath, serialized, { mode: 0o600 })
+  }
+
+  private fileContentsEqual(targetPath: string, contents: string): boolean {
+    try {
+      return existsSync(targetPath) && readFileSync(targetPath, 'utf-8') === contents
+    } catch {
+      return false
+    }
   }
 
   private readJsonObject(targetPath: string): Record<string, unknown> {

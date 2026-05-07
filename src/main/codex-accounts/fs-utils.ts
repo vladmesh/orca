@@ -61,11 +61,8 @@ function renameWithRetry(source: string, target: string): void {
   }
 }
 
-// Why: writeFileAtomically is a sync API called from sync code paths, but we
-// need to actually yield the Electron main thread during retry backoff so
-// IPC and the renderer aren't frozen. Atomics.wait on a private
-// SharedArrayBuffer is a real OS-level sleep — unlike a Date.now() spin loop,
-// which pegs a CPU core and starves the event loop.
+// Why: writeFileAtomically is a sync API called from sync paths, so the retry
+// backoff must park the thread instead of burning CPU in a Date.now() loop.
 const sleepBuffer = new Int32Array(new SharedArrayBuffer(4))
 function sleepSync(ms: number): void {
   Atomics.wait(sleepBuffer, 0, 0, ms)

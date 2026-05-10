@@ -30,6 +30,9 @@ type CodexSystemDefaultSnapshot = {
 }
 
 type CodexReadBackResult = 'unchanged' | 'persisted' | 'rejected'
+type CodexReadBackMatch =
+  | { kind: 'matched'; account: CodexManagedAccount; managedAuthPath: string }
+  | { kind: 'none' | 'ambiguous' }
 
 export class CodexRuntimeHomeService {
   // Why: tracks whether auth.json is currently managed by Orca. When null,
@@ -129,7 +132,7 @@ export class CodexRuntimeHomeService {
       if (this.skipNextReadBackForAccountId === activeAccount.id) {
         this.skipNextReadBackForAccountId = null
       } else {
-        this.readBackRefreshedTokens(activeAccount, activeAuthPath, {
+        this.readBackRefreshedTokens({
           updateLastWrittenAuthJson: true
         })
       }
@@ -151,11 +154,9 @@ export class CodexRuntimeHomeService {
     this.skipNextReadBackForAccountId = accountId
   }
 
-  private readBackRefreshedTokens(
-    activeAccount: CodexManagedAccount,
-    managedAuthPath: string,
-    options: { updateLastWrittenAuthJson: boolean }
-  ): CodexReadBackResult {
+  private readBackRefreshedTokens(options: {
+    updateLastWrittenAuthJson: boolean
+  }): CodexReadBackResult {
     try {
       const runtimeAuthPath = this.getRuntimeAuthPath()
       if (!existsSync(runtimeAuthPath)) {
@@ -167,17 +168,15 @@ export class CodexRuntimeHomeService {
         return 'unchanged'
       }
 
-      if (
-        !this.runtimeAuthMatchesAccount(
-          runtimeContents,
-          activeAccount,
-          readFileSync(managedAuthPath, 'utf-8')
-        )
-      ) {
+      const match = this.findManagedAccountForRuntimeAuth(runtimeContents)
+      if (match.kind !== 'matched') {
+        if (match.kind === 'ambiguous') {
+          console.warn('[codex-runtime-home] Refusing ambiguous Codex auth read-back')
+        }
         return 'rejected'
       }
 
-      writeFileAtomically(managedAuthPath, runtimeContents, { mode: 0o600 })
+      writeFileAtomically(match.managedAuthPath, runtimeContents, { mode: 0o600 })
       if (options.updateLastWrittenAuthJson) {
         this.lastWrittenAuthJson = runtimeContents
       }
@@ -192,14 +191,10 @@ export class CodexRuntimeHomeService {
   }
 
   private readBackRefreshedTokensForAccount(
-    account: CodexManagedAccount,
+    _account: CodexManagedAccount,
     options: { updateLastWrittenAuthJson: boolean }
   ): CodexReadBackResult {
-    const managedAuthPath = join(account.managedHomePath, 'auth.json')
-    if (!existsSync(managedAuthPath)) {
-      return 'unchanged'
-    }
-    return this.readBackRefreshedTokens(account, managedAuthPath, options)
+    return this.readBackRefreshedTokens(options)
   }
 
   private safeSyncForCurrentSelection(): void {
@@ -218,6 +213,30 @@ export class CodexRuntimeHomeService {
       return null
     }
     return accounts.find((account) => account.id === activeAccountId) ?? null
+  }
+
+  private findManagedAccountForRuntimeAuth(runtimeAuthContents: string): CodexReadBackMatch {
+    const matches: { account: CodexManagedAccount; managedAuthPath: string }[] = []
+    for (const account of this.store.getSettings().codexManagedAccounts) {
+      const managedAuthPath = join(account.managedHomePath, 'auth.json')
+      if (!existsSync(managedAuthPath)) {
+        continue
+      }
+      if (
+        this.runtimeAuthMatchesAccount(
+          runtimeAuthContents,
+          account,
+          readFileSync(managedAuthPath, 'utf-8')
+        )
+      ) {
+        matches.push({ account, managedAuthPath })
+      }
+    }
+
+    if (matches.length === 1) {
+      return { kind: 'matched', ...matches[0] }
+    }
+    return { kind: matches.length === 0 ? 'none' : 'ambiguous' }
   }
 
   private runtimeAuthMatchesAccount(

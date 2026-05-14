@@ -82,6 +82,7 @@ export default function AutomationsPage(): React.JSX.Element {
   const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState(false)
   const editRequestRef = useRef(0)
   const deleteConfirmButtonRef = useRef<HTMLButtonElement>(null)
+  const completionInFlightRef = useRef<Set<string>>(new Set())
   const [draft, setDraft] = useState<AutomationDraft>({
     name: '',
     prompt: '',
@@ -166,8 +167,12 @@ export default function AutomationsPage(): React.JSX.Element {
   }, [refresh])
 
   useEffect(() => {
+    const inFlight = completionInFlightRef.current
     const completedRuns = runs.filter((run) => {
       if (run.status !== 'dispatched' || !run.terminalSessionId) {
+        return false
+      }
+      if (inFlight.has(run.id)) {
         return false
       }
       const paneKeyPrefix = `${run.terminalSessionId}:`
@@ -185,6 +190,9 @@ export default function AutomationsPage(): React.JSX.Element {
     if (completedRuns.length === 0) {
       return
     }
+    for (const run of completedRuns) {
+      inFlight.add(run.id)
+    }
     void Promise.all(
       completedRuns.map((run) =>
         window.api.automations.markDispatchResult({
@@ -195,7 +203,12 @@ export default function AutomationsPage(): React.JSX.Element {
           error: null
         })
       )
-    ).then(() => refresh())
+    ).then(() => {
+      for (const run of completedRuns) {
+        inFlight.delete(run.id)
+      }
+      return refresh()
+    })
   }, [agentStatusByPaneKey, retainedAgentsByPaneKey, refresh, runs])
 
   useEffect(() => {

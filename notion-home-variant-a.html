@@ -225,7 +225,7 @@
     max-width: 620px;
     margin: 0 auto 26px;
   }
-  .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; max-width: 100%; }
   .btn {
     display: inline-flex;
     align-items: center;
@@ -241,10 +241,17 @@
   .btn-ghost { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
   .btn-ghost:hover { background: rgba(255,255,255,0.18); }
   .btn:active { transform: translateY(1px); }
+  .reassurance-line,
   .status-line {
-    margin-top: 14px;
     font-size: 13px;
-    color: rgba(255,255,255,0.6);
+    color: rgba(255,255,255,0.74);
+  }
+  .reassurance-line {
+    margin: 10px 0 0;
+    line-height: 1.4;
+  }
+  .status-line {
+    margin-top: 8px;
     min-height: 18px;
   }
 
@@ -490,7 +497,7 @@
     .announce { font-size: 12.5px; padding: 8px 36px 8px 12px; }
     h1.headline { font-size: 44px; }
     .ctas { width: 100%; }
-    .btn { width: 100%; justify-content: center; }
+    .btn { width: 100%; max-width: 100%; justify-content: center; }
   }
 </style>
 </head>
@@ -576,6 +583,7 @@
       <button class="btn btn-primary" id="cta-primary" aria-describedby="status-line">Get Notion free</button>
       <button class="btn btn-ghost" id="cta-secondary" aria-describedby="status-line">Request a demo</button>
     </div>
+    <p class="reassurance-line">No credit card required.</p>
     <div class="status-line" id="status-line" role="status" aria-live="polite"></div>
   </div>
 

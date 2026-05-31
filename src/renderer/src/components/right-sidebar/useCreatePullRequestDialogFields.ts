@@ -12,15 +12,13 @@ import {
   getRuntimeRepoBaseRefDefault,
   searchRuntimeRepoBaseRefs
 } from '@/runtime/runtime-repo-client'
-import {
-  isCustomAgentId,
-  resolveCommitMessageAgentChoice
-} from '../../../../shared/commit-message-agent-spec'
+import type { Repo } from '../../../../shared/types'
 import type { HostedReviewCreationEligibility } from '../../../../shared/hosted-review'
 import { normalizeHostedReviewBaseRef } from '../../../../shared/hosted-review-refs'
 import {
   DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS,
-  normalizeSourceControlAiSettings
+  normalizeSourceControlAiSettings,
+  resolveSourceControlAiForOperation
 } from '../../../../shared/source-control-ai'
 import type { SourceControlAiPrCreationDefaults } from '../../../../shared/source-control-ai-types'
 
@@ -40,6 +38,7 @@ type UseCreatePullRequestDialogFieldsOptions = {
   worktreePath: string
   branch: string
   eligibility: HostedReviewCreationEligibility | null
+  repo?: Pick<Repo, 'sourceControlAi'> | null
   settings: AppState['settings']
   submitting: boolean
   prCreationDefaults?: SourceControlAiPrCreationDefaults
@@ -78,6 +77,7 @@ export function useCreatePullRequestDialogFields({
   worktreePath,
   branch,
   eligibility,
+  repo,
   settings,
   submitting,
   prCreationDefaults,
@@ -91,11 +91,13 @@ export function useCreatePullRequestDialogFields({
   const sourceControlAi = settings
     ? normalizedSourceControlAi
     : { ...normalizedSourceControlAi, enabled: false }
-  const effectiveCommitMessageAgentId = resolveCommitMessageAgentChoice(
-    sourceControlAi.agentId,
-    settings?.defaultTuiAgent,
-    settings?.disabledTuiAgents
-  )
+  const resolvedPullRequestAi = settings
+    ? resolveSourceControlAiForOperation({
+        settings,
+        repo,
+        operation: 'pullRequest'
+      })
+    : null
   const resolvedPrDefaults = {
     ...DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS,
     ...prCreationDefaults
@@ -289,16 +291,9 @@ export function useCreatePullRequestDialogFields({
   let generateDisabledReason: string | undefined
   if (submitting) {
     generateDisabledReason = 'Create PR in progress...'
-  } else if (!sourceControlAi.enabled) {
-    generateDisabledReason = 'Enable Source Control AI in Settings -> Git.'
-  } else if (!effectiveCommitMessageAgentId) {
-    generateDisabledReason = 'Pick an agent in Settings -> Git -> Source Control AI.'
-  } else if (isCustomAgentId(effectiveCommitMessageAgentId)) {
-    const command = sourceControlAi.customAgentCommand?.trim() ?? ''
-    if (!command) {
-      generateDisabledReason =
-        'Custom command is empty. Add one in Settings -> Git -> Source Control AI.'
-    }
+  } else if (!resolvedPullRequestAi?.ok) {
+    generateDisabledReason =
+      resolvedPullRequestAi?.error ?? 'Enable Source Control AI in Settings -> Git.'
   } else if (!base.trim()) {
     generateDisabledReason = 'Choose a base branch before generating.'
   }

@@ -24,29 +24,30 @@ describe('GitPane', () => {
     expect(shouldShowAutoRenameBranchSetting('zz-no-match', true)).toBe(true)
   })
 
-  it('shows the auto-rename branch setting for advanced prompt and model searches', () => {
+  it('shows the auto-rename branch setting for advanced command-template searches', () => {
     expect(shouldShowAutoRenameBranchSetting('instructions', false)).toBe(true)
     expect(shouldShowAutoRenameBranchSetting('built-in prompt', false)).toBe(true)
-    expect(shouldShowAutoRenameBranchSetting('thinking', false)).toBe(true)
-    expect(shouldShowAutoRenameBranchSetting('override', false)).toBe(true)
+    expect(shouldShowAutoRenameBranchSetting('command template', false)).toBe(true)
+    expect(shouldShowAutoRenameBranchSetting('kebab-case', false)).toBe(true)
   })
 
   it('hides the auto-rename branch setting when search misses and the prompt draft is clean', () => {
     expect(shouldShowAutoRenameBranchSetting('zz-no-match', false)).toBe(false)
   })
 
-  it('opens auto-rename advanced controls when search matches hidden prompt or model fields', () => {
+  it('opens auto-rename advanced controls when search matches hidden command-template fields', () => {
     expect(shouldOpenAutoRenameBranchAdvanced('prompt')).toBe(true)
-    expect(shouldOpenAutoRenameBranchAdvanced('model')).toBe(true)
     expect(shouldOpenAutoRenameBranchAdvanced('instructions')).toBe(true)
     expect(shouldOpenAutoRenameBranchAdvanced('built-in prompt')).toBe(true)
-    expect(shouldOpenAutoRenameBranchAdvanced('thinking')).toBe(true)
-    expect(shouldOpenAutoRenameBranchAdvanced('override')).toBe(true)
+    expect(shouldOpenAutoRenameBranchAdvanced('command template')).toBe(true)
+    expect(shouldOpenAutoRenameBranchAdvanced('kebab-case')).toBe(true)
+    expect(shouldOpenAutoRenameBranchAdvanced('model')).toBe(false)
+    expect(shouldOpenAutoRenameBranchAdvanced('thinking')).toBe(false)
   })
 
   it('renders auto-rename advanced controls for advanced-only search terms', () => {
-    expect(renderGitPane('instructions')).toContain('Branch name prompt')
-    expect(renderGitPane('thinking')).toContain('Branch name model')
+    expect(renderGitPane('instructions')).toContain('Branch name command template')
+    expect(renderGitPane('command template')).toContain('Branch name command template')
   })
 
   it('keeps auto-rename advanced controls collapsed without an advanced search match', () => {

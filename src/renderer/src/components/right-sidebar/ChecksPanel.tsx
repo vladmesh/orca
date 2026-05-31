@@ -26,12 +26,7 @@ import type {
   PRComment
 } from '../../../../shared/types'
 import { getConnectionId } from '@/lib/connection-context'
-import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
-import {
-  buildResolvePullRequestConflictsPrompt,
-  pickDefaultSourceControlAgent
-} from './SourceControl'
+import { buildResolvePullRequestConflictsPrompt } from './SourceControl'
 import { buildFixBrokenChecksPrompt, getBrokenChecks } from '../pr-checks-fix-prompt'
 import { CreatePullRequestDialog } from './CreatePullRequestDialog'
 import type {
@@ -70,6 +65,16 @@ import { installWindowVisibilityInterval } from '@/lib/window-visibility-interva
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { gitLabPipelineJobsToPRChecks } from '../../../../shared/gitlab-pipeline-checks'
+import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
+import {
+  normalizeSourceControlAiSettings,
+  resolveSourceControlActionRecipe
+} from '../../../../shared/source-control-ai'
+import {
+  setSourceControlActionDefault,
+  type SourceControlActionRecipe,
+  type SourceControlLaunchActionId
+} from '../../../../shared/source-control-ai-actions'
 
 const RUNTIME_SSH_STATUS_REFRESH_MS = 3000
 const GIT_STATUS_FAILURE_RETRY_MS = 3000
@@ -80,6 +85,14 @@ type HostedReviewCreationSnapshot = {
   worktreeId: string | null
   branch: string
   data: HostedReviewCreationEligibility
+}
+
+type ChecksAgentComposerState = {
+  actionId: SourceControlLaunchActionId
+  title: string
+  description: string
+  prompt: string
+  launchSource: 'conflict_resolution' | 'task_page'
 }
 
 type ChecksPanelReview = Pick<
@@ -151,6 +164,7 @@ export default function ChecksPanel(): React.JSX.Element {
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const repo = useRepoById(activeWorktree?.repoId ?? null)
   const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
   const prCache = useAppStore((s) => s.prCache)
   const fetchPRForBranch = useAppStore((s) => s.fetchPRForBranch)
   const fetchHostedReviewForBranch = useAppStore((s) => s.fetchHostedReviewForBranch)
@@ -195,8 +209,11 @@ export default function ChecksPanel(): React.JSX.Element {
   const [createPrDialogOpen, setCreatePrDialogOpen] = useState(false)
   const [createPrPushFirst, setCreatePrPushFirst] = useState(false)
   const [isPublishingBranch, setIsPublishingBranch] = useState(false)
-  const [isResolvingConflictsWithAI, setIsResolvingConflictsWithAI] = useState(false)
-  const [isFixingChecksWithAI, setIsFixingChecksWithAI] = useState(false)
+  const isResolvingConflictsWithAI = false
+  const isFixingChecksWithAI = false
+  const [agentComposerState, setAgentComposerState] = useState<ChecksAgentComposerState | null>(
+    null
+  )
   const [hostedReviewCreationSnapshot, setHostedReviewCreationSnapshot] =
     useState<HostedReviewCreationSnapshot | null>(null)
   const [gitStatusSnapshot, setGitStatusSnapshot] = useState<ChecksPanelGitStatusSnapshot | null>(
@@ -212,6 +229,26 @@ export default function ChecksPanel(): React.JSX.Element {
   const mountedRef = useMountedRef()
   const prevChecksRef = useRef<string>('')
   const conflictSummaryRefreshKeyRef = useRef<string | null>(null)
+
+  const saveLaunchActionDefault = useCallback(
+    async (
+      actionId: SourceControlLaunchActionId,
+      recipe: SourceControlActionRecipe
+    ): Promise<void> => {
+      const latestSettings = useAppStore.getState().settings
+      const latestSourceControlAi = normalizeSourceControlAiSettings(
+        latestSettings?.sourceControlAi,
+        latestSettings?.commitMessageAi
+      )
+      await updateSettings({
+        sourceControlAi: {
+          ...latestSourceControlAi,
+          actions: setSourceControlActionDefault(latestSourceControlAi.actions, actionId, recipe)
+        }
+      })
+    },
+    [updateSettings]
+  )
   const asyncResultKeyRef = useRef<string>('')
   const refreshRequestKeyRef = useRef<string | null>(null)
   const refreshContextKeyRef = useRef<string | null>(null)
@@ -277,8 +314,7 @@ export default function ChecksPanel(): React.JSX.Element {
     setCreatePrDialogOpen(false)
     setCreatePrPushFirst(false)
     setIsPublishingBranch(false)
-    setIsResolvingConflictsWithAI(false)
-    setIsFixingChecksWithAI(false)
+    setAgentComposerState(null)
     setHostedReviewCreationSnapshot(null)
     setGitStatusSnapshot(null)
     setGitStatusRefreshNonce((value) => value + 1)
@@ -1385,56 +1421,26 @@ export default function ChecksPanel(): React.JSX.Element {
   // MERGE_HEAD, so the prompt must tell the agent how to reproduce the merge
   // locally instead of reusing the live Source Control conflict prompt.
   const handleResolveConflictsWithAI = useCallback(async (): Promise<void> => {
-    if (isResolvingConflictsWithAI || !activeWorktreeId || !pr) {
+    if (!activeWorktreeId || !pr) {
       return
     }
     const conflictFiles = pr.conflictSummary?.files ?? []
-    setIsResolvingConflictsWithAI(true)
-    try {
-      const connectionId = getConnectionId(activeWorktreeId)
-      if (connectionId === undefined) {
-        toast.error('Unable to resolve the workspace connection.')
-        return
-      }
-      const store = useAppStore.getState()
-      const detectedAgents =
-        typeof connectionId === 'string'
-          ? await store.ensureRemoteDetectedAgents(connectionId)
-          : await store.ensureDetectedAgents()
-      const agent = pickDefaultSourceControlAgent(
-        store.settings?.defaultTuiAgent,
-        detectedAgents,
-        store.settings?.disabledTuiAgents
-      )
-      if (!agent) {
-        toast.error('No enabled AI agents. Configure agents in Settings.')
-        return
-      }
-      const prompt = buildResolvePullRequestConflictsPrompt({
+    setAgentComposerState({
+      actionId: 'resolveConflicts',
+      title: 'Resolve Review Conflicts With AI',
+      description: 'Review and edit the full command input before starting an agent.',
+      prompt: buildResolvePullRequestConflictsPrompt({
+        reviewKind: activeReview?.provider === 'gitlab' ? 'MR' : 'PR',
         baseRef: pr.conflictSummary?.baseRef,
         entries: conflictFiles.map((path) => ({ path })),
         worktreePath: activeWorktreePath ?? null
-      })
-      const result = launchAgentInNewTab({
-        agent,
-        worktreeId: activeWorktreeId,
-        prompt,
-        promptDelivery: 'submit-after-ready',
-        launchSource: 'conflict_resolution'
-      })
-      if (!result) {
-        toast.error('Could not build the agent launch command.')
-        return
-      }
-      focusTerminalTabSurface(result.tabId)
-      toast.success('Started an AI agent for the conflicts.')
-    } finally {
-      setIsResolvingConflictsWithAI(false)
-    }
-  }, [activeWorktreeId, activeWorktreePath, isResolvingConflictsWithAI, pr])
+      }),
+      launchSource: 'conflict_resolution'
+    })
+  }, [activeReview?.provider, activeWorktreeId, activeWorktreePath, pr])
 
   const handleFixChecksWithAI = useCallback(async (): Promise<void> => {
-    if (isFixingChecksWithAI || !activeWorktreeId || !activeReview) {
+    if (!activeWorktreeId || !activeReview) {
       return
     }
     const broken = getBrokenChecks(checks)
@@ -1442,51 +1448,20 @@ export default function ChecksPanel(): React.JSX.Element {
       toast.message('No broken checks to fix.')
       return
     }
-    setIsFixingChecksWithAI(true)
-    try {
-      const connectionId = getConnectionId(activeWorktreeId)
-      if (connectionId === undefined) {
-        toast.error('Unable to resolve the workspace connection.')
-        return
-      }
-      const store = useAppStore.getState()
-      const detectedAgents =
-        typeof connectionId === 'string'
-          ? await store.ensureRemoteDetectedAgents(connectionId)
-          : await store.ensureDetectedAgents()
-      const agent = pickDefaultSourceControlAgent(
-        store.settings?.defaultTuiAgent,
-        detectedAgents,
-        store.settings?.disabledTuiAgents
-      )
-      if (!agent) {
-        toast.error('No enabled AI agents. Configure agents in Settings.')
-        return
-      }
-      const prompt = buildFixBrokenChecksPrompt({
+    setAgentComposerState({
+      actionId: 'fixChecks',
+      title: 'Fix Checks With AI',
+      description: 'Review and edit the full command input before starting an agent.',
+      prompt: buildFixBrokenChecksPrompt({
         reviewKind: activeReview.provider === 'gitlab' ? 'MR' : 'PR',
         reviewNumber: activeReview.number,
         reviewTitle: activeReview.title,
         reviewUrl: activeReview.url,
         checks
-      })
-      const result = launchAgentInNewTab({
-        agent,
-        worktreeId: activeWorktreeId,
-        prompt,
-        promptDelivery: 'submit-after-ready',
-        launchSource: 'task_page'
-      })
-      if (!result) {
-        toast.error('Could not build the agent launch command.')
-        return
-      }
-      focusTerminalTabSurface(result.tabId)
-      toast.success('Started an AI agent for the broken checks.')
-    } finally {
-      setIsFixingChecksWithAI(false)
-    }
-  }, [activeReview, activeWorktreeId, checks, isFixingChecksWithAI])
+      }),
+      launchSource: 'task_page'
+    })
+  }, [activeReview, activeWorktreeId, checks])
 
   // Refresh PR (passed to PRActions)
   const handleRefreshPR = useCallback(async () => {
@@ -2011,6 +1986,49 @@ export default function ChecksPanel(): React.JSX.Element {
         comments={comments}
         commentsLoading={commentsLoading}
         onResolve={pr ? handleResolve : undefined}
+      />
+      <SourceControlAgentActionDialog
+        open={agentComposerState !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAgentComposerState(null)
+          }
+        }}
+        actionId={agentComposerState?.actionId ?? 'fixChecks'}
+        title={agentComposerState?.title ?? 'Fix With AI'}
+        description={agentComposerState?.description ?? ''}
+        baseCommandInput={agentComposerState?.prompt ?? ''}
+        worktreeId={activeWorktreeId}
+        groupId={activeWorktreeId}
+        connectionId={activeWorktreeId ? getConnectionId(activeWorktreeId) : null}
+        promptDelivery="submit-after-ready"
+        launchSource={agentComposerState?.launchSource ?? 'task_page'}
+        savedAgentId={
+          agentComposerState
+            ? (resolveSourceControlActionRecipe({
+                settings,
+                repo,
+                actionId: agentComposerState.actionId
+              }).agentId ?? null)
+            : null
+        }
+        savedCommandInputTemplate={
+          agentComposerState
+            ? (resolveSourceControlActionRecipe({
+                settings,
+                repo,
+                actionId: agentComposerState.actionId
+              }).commandInputTemplate ?? null)
+            : null
+        }
+        onSaveAgentDefault={saveLaunchActionDefault}
+        onLaunched={() => {
+          if (agentComposerState?.actionId === 'resolveConflicts') {
+            toast.success('Started an AI agent for the conflicts.')
+          } else {
+            toast.success('Started an AI agent for the broken checks.')
+          }
+        }}
       />
     </div>
   )

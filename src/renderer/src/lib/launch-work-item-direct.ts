@@ -14,6 +14,7 @@ import {
   isGitLabIssueUrl
 } from '@/lib/new-workspace'
 import { ensureHooksConfirmed } from '@/lib/ensure-hooks-confirmed'
+import { getConnectionId } from '@/lib/connection-context'
 import { checkRuntimeHooks } from '@/runtime/runtime-hooks-client'
 import { track, tuiAgentToAgentKind } from '@/lib/telemetry'
 import type {
@@ -67,6 +68,9 @@ export type LaunchWorkItemDirectArgs = {
    *  entry point (Tasks page row → `sidebar`, Create-from modal →
    *  `command_palette`). Omitted callers default to `unknown`. */
   telemetrySource?: WorkspaceCreateTelemetrySource
+  /** Explicit agent chosen by an action-time composer. When unavailable after
+   *  workspace creation, Orca must not fall back to a different agent. */
+  agentOverride?: TuiAgent
 }
 
 async function resolveDirectPrStartPoint(
@@ -178,24 +182,32 @@ async function pasteWorkItemDraftWhenAgentReady(args: {
  * the agent-readiness or paste steps only toast a notice — the user still
  * has a usable workspace and can paste the URL themselves.
  */
-export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Promise<void> {
-  const { item, repoId, openModalFallback, baseBranch, telemetrySource, launchSource } = args
+export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Promise<boolean> {
+  const {
+    item,
+    repoId,
+    openModalFallback,
+    baseBranch,
+    telemetrySource,
+    launchSource,
+    agentOverride
+  } = args
   const store = useAppStore.getState()
   const repo = store.repos.find((r) => r.id === repoId)
   if (!repo) {
     openModalFallback()
-    return
+    return false
   }
 
   const settings = store.settings
   // Why: agent detection shells out and can be cold/slow. Start it now, but
   // don't let it serialize setup-policy resolution or git worktree creation.
-  const detectedAgentsPromise = store.ensureDetectedAgents()
+  const detectedAgentsPromise = agentOverride ? null : store.ensureDetectedAgents()
 
   const setupResolution = await resolveSetupDecision(repoId, repo)
   if (setupResolution.kind === 'needs-modal') {
     openModalFallback()
-    return
+    return false
   }
 
   const trustDecision = await ensureHooksConfirmed(useAppStore.getState(), repoId, 'setup')
@@ -220,7 +232,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to resolve PR head.')
       openModalFallback()
-      return
+      return false
     }
   }
 
@@ -251,12 +263,33 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
     worktreeId = result.worktree.id
     const worktreePath = result.worktree.path
 
-    const detectedIds = new Set(await detectedAgentsPromise)
-    effectiveAgent = pickTuiAgent(
-      settings?.defaultTuiAgent,
-      detectedIds,
-      settings?.disabledTuiAgents
-    )
+    if (agentOverride) {
+      const createdConnectionId = getConnectionId(worktreeId)
+      const latestStore = useAppStore.getState()
+      const detectedAgents =
+        typeof createdConnectionId === 'string'
+          ? await latestStore.ensureRemoteDetectedAgents(createdConnectionId)
+          : await latestStore.ensureDetectedAgents()
+      if (
+        !detectedAgents.includes(agentOverride) ||
+        !pickTuiAgent(agentOverride, detectedAgents, latestStore.settings?.disabledTuiAgents)
+      ) {
+        activateAndRevealWorktree(worktreeId, {
+          sidebarRevealBehavior: 'auto',
+          setup: result.setup
+        })
+        toast.error('Selected agent is not available in the created workspace.')
+        return false
+      }
+      effectiveAgent = agentOverride
+    } else {
+      const detectedIds = new Set(await detectedAgentsPromise!)
+      effectiveAgent = pickTuiAgent(
+        settings?.defaultTuiAgent,
+        detectedIds,
+        settings?.disabledTuiAgents
+      )
+    }
     if (effectiveAgent) {
       // Why: direct task launch creates and starts the workspace in separate
       // steps so agent detection can overlap git worktree creation. Persist
@@ -332,13 +365,13 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       // Worktree vanished between create and activate — extremely unlikely but
       // worth handling explicitly rather than silently dropping the URL.
       toast.error('Workspace created but could not be activated.')
-      return
+      return false
     }
     primaryTabId = activation.primaryTabId
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create workspace.'
     toast.error(message)
-    return
+    return false
   }
 
   store.setSidebarOpen(true)
@@ -349,7 +382,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
   // were launched with the URL already on argv (Claude --prefill today),
   // the URL is in the input box already — pasting again would duplicate it.
   if (!primaryTabId || !startupPlan || draftLaunchedNatively) {
-    return
+    return true
   }
 
   const content = item.pasteContent ?? item.url
@@ -363,4 +396,5 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
     content,
     ...(effectiveAgent ? { agentKind: tuiAgentToAgentKind(effectiveAgent) } : {})
   })
+  return true
 }

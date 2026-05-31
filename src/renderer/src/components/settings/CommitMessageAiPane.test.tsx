@@ -10,6 +10,7 @@ import {
 import { useAppStore } from '../../store'
 import {
   CommitMessageAiPane,
+  getAgentCatalogForAction,
   getCommitMessageSettingsPaneDiscoveryHostKey,
   mergeDiscoveredModelsIntoCommitMessageConfig
 } from './CommitMessageAiPane'
@@ -49,11 +50,13 @@ describe('CommitMessageAiPane', () => {
     expect(markup).toContain('Source Control AI')
     expect(markup).toContain('Enable Source Control AI')
     expect(markup).toContain('aria-checked="false"')
-    expect(markup).not.toContain('Orca invokes this CLI')
+    expect(markup).not.toContain('Action recipes')
+    expect(markup).not.toContain('Command template')
+    expect(markup).not.toContain('Default model')
     expect(markup).not.toContain('Thinking effort')
   })
 
-  it('renders model, thinking, and prompt controls for enabled preset agents', () => {
+  it('renders action recipes for every Source Control AI action', () => {
     const markup = renderPane(
       buildSettings({
         commitMessageAi: {
@@ -68,19 +71,32 @@ describe('CommitMessageAiPane', () => {
     )
 
     expect(markup).toContain('aria-checked="true"')
-    expect(markup).toContain('Orca invokes this CLI')
-    expect(markup).toContain('Default model')
-    expect(markup).toContain('Thinking effort')
-    expect(markup).toContain('Commit message model')
-    expect(markup).toContain('PR details model')
-    expect(markup).not.toContain('Branch name model')
-    expect(markup).toContain('Higher effort produces more careful messages')
+    expect(markup).toContain('Action recipes')
+    expect(markup).toContain('Commit message')
+    expect(markup).toContain('Pull request details')
+    expect(markup).toContain('Branch name')
+    expect(markup).toContain('Commit failure fixes')
+    expect(markup).toContain('Broken checks fixes')
+    expect(markup).toContain('Conflict resolution')
+    expect(markup).toContain('Command template')
+    expect(markup).toContain('{basePrompt}')
+    expect(markup).toContain('{stagedPatch}')
     expect(markup).toContain('Use Conventional Commits.')
-    expect(markup).toContain('Save')
-    expect(markup).toContain('Saved')
+    expect(markup).not.toContain('Default model')
+    expect(markup).not.toContain('Thinking effort')
   })
 
-  it('keeps the agent and model selectors aligned for long labels', () => {
+  it('only offers non-interactive generation agents for text generation actions', () => {
+    expect(getAgentCatalogForAction('commitMessage', null).map((agent) => agent.id)).not.toContain(
+      'aider'
+    )
+    expect(getAgentCatalogForAction('pullRequest', null).map((agent) => agent.id)).not.toContain(
+      'aider'
+    )
+    expect(getAgentCatalogForAction('fixChecks', null).map((agent) => agent.id)).toContain('aider')
+  })
+
+  it('keeps action agent selectors constrained for long labels', () => {
     const markup = renderPane(
       buildSettings({
         commitMessageAi: {
@@ -94,30 +110,46 @@ describe('CommitMessageAiPane', () => {
       })
     )
 
-    expect(markup.match(/w-\[260px\]/g)).toHaveLength(2)
-    expect(markup.match(/shrink-0/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+    expect(markup.match(/sm:w-\[220px\]/g)?.length ?? 0).toBeGreaterThanOrEqual(6)
+    expect(markup.match(/shrink-0/g)?.length ?? 0).toBeGreaterThanOrEqual(6)
   })
 
-  it('renders custom command settings for custom agents', () => {
+  it('renders saved custom action templates without the old custom command schema', () => {
     const markup = renderPane(
       buildSettings({
-        commitMessageAi: {
+        sourceControlAi: {
           enabled: true,
-          agentId: 'custom',
+          agentId: null,
           selectedModelByAgent: {},
+          selectedModelByAgentByHost: {},
+          discoveredModelsByAgent: {},
+          discoveredModelsByAgentByHost: {},
           selectedThinkingByModel: {},
-          customPrompt: '',
-          customAgentCommand: 'ollama run llama3.1 {prompt}'
+          instructionsByOperation: { commitMessage: '', pullRequest: '', branchName: '' },
+          customAgentCommand: '',
+          actions: {
+            commitMessage: {
+              agentId: 'codex',
+              commandInputTemplate: 'use $best-commit-msg to write a commit'
+            },
+            fixChecks: {
+              agentId: 'claude',
+              commandInputTemplate: 'use /fix-ci-issue to fix the linked CI bug'
+            }
+          },
+          prCreationDefaults: {},
+          launchActionDefaults: {}
         }
       })
     )
 
     expect(markup).toContain('Source Control AI')
-    expect(markup).toContain('Custom command')
-    expect(markup).toContain('ollama run llama3.1 {prompt}')
+    expect(markup).toContain('use $best-commit-msg to write a commit')
+    expect(markup).toContain('use /fix-ci-issue to fix the linked CI bug')
+    expect(markup).not.toContain('Custom command')
   })
 
-  it('shows an unconfigured state when the default agent is unsupported', () => {
+  it('allows default-agent recipes even when the old default generator is unsupported', () => {
     const markup = renderPane(
       buildSettings({
         defaultTuiAgent: 'aider',
@@ -132,14 +164,13 @@ describe('CommitMessageAiPane', () => {
       })
     )
 
-    expect(markup).toContain('Not configured')
-    expect(markup).toContain('Your default agent is Aider')
-    expect(markup).toContain('Choose a supported agent or Custom')
-    expect(markup).not.toContain('Which model the selected agent uses')
+    expect(markup).toContain('Action recipes')
+    expect(markup).toContain('{basePrompt}')
+    expect(markup).not.toContain('Not configured')
     expect(markup).not.toContain('Thinking effort')
   })
 
-  it('shows Gemini as coming soon instead of a selectable generator', () => {
+  it('removes the old Gemini text-generation lockout from the settings pane', () => {
     const markup = renderPane(
       buildSettings({
         commitMessageAi: {
@@ -153,18 +184,18 @@ describe('CommitMessageAiPane', () => {
       })
     )
 
-    expect(markup).toContain('Gemini')
-    expect(markup).toContain('Gemini Source Control AI is coming soon')
+    expect(markup).toContain('Action recipes')
+    expect(markup).not.toContain('Gemini Source Control AI is coming soon')
     expect(markup).not.toContain('Which model Source Control AI uses')
   })
 
-  it('keeps custom command discoverable in settings search metadata', () => {
-    const customCommandEntry = COMMIT_MESSAGE_AI_PANE_SEARCH_ENTRIES.find(
-      (entry) => entry.title === 'Custom command'
+  it('keeps action recipes discoverable in settings search metadata', () => {
+    const actionRecipesEntry = COMMIT_MESSAGE_AI_PANE_SEARCH_ENTRIES.find(
+      (entry) => entry.title === 'Action recipes'
     )
 
-    expect(customCommandEntry?.keywords).toEqual(
-      expect.arrayContaining(['custom', 'command', 'ollama'])
+    expect(actionRecipesEntry?.keywords).toEqual(
+      expect.arrayContaining(['agent', 'command', 'template', 'ci'])
     )
   })
 

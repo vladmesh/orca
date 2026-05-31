@@ -15,6 +15,7 @@ import type {
   CommitMessageAgentCapability,
   CommitMessageModelCapability
 } from '../../../shared/commit-message-agent-spec'
+import type { ResolvedSourceControlAiGenerationParams } from '../../../shared/source-control-ai'
 import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../shared/commit-message-host-key'
 import type { GitHistoryOptions, GitHistoryResult } from '../../../shared/git-history'
 import { getRepoIdFromWorktreeId } from '../../../shared/worktree-id'
@@ -55,6 +56,12 @@ export type RuntimeGitContext = {
   worktreeId: string | null | undefined
   worktreePath: string
   connectionId?: string
+}
+
+export type RuntimeGenerateCommitMessageOverrides = {
+  sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
+  sourceControlAi?: GlobalSettings['sourceControlAi']
+  agentCmdOverrides?: GlobalSettings['agentCmdOverrides']
 }
 
 function getRuntimeCommitMessageSettings(
@@ -482,14 +489,20 @@ export async function commitRuntimeGit(
 }
 
 export async function generateRuntimeCommitMessage(
-  context: RuntimeGitContext
+  context: RuntimeGitContext,
+  overrides?: RuntimeGenerateCommitMessageOverrides
 ): Promise<RuntimeGenerateCommitMessageResult> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.generateCommitMessage({
       worktreePath: context.worktreePath,
       repoId: context.worktreeId ? getRepoIdFromWorktreeId(context.worktreeId) : undefined,
-      connectionId: context.connectionId
+      connectionId: context.connectionId,
+      ...(overrides?.sourceControlAiResolvedParams
+        ? { sourceControlAiResolvedParams: overrides.sourceControlAiResolvedParams }
+        : {}),
+      ...(overrides?.sourceControlAi ? { sourceControlAi: overrides.sourceControlAi } : {}),
+      ...(overrides?.agentCmdOverrides ? { agentCmdOverrides: overrides.agentCmdOverrides } : {})
     }) as Promise<RuntimeGenerateCommitMessageResult>
   }
   return callRuntimeRpc<RuntimeGenerateCommitMessageResult>(
@@ -497,7 +510,12 @@ export async function generateRuntimeCommitMessage(
     'git.generateCommitMessage',
     {
       worktree: context.worktreeId,
-      ...getRuntimeCommitMessageSettings(context.settings, context.connectionId)
+      ...getRuntimeCommitMessageSettings(context.settings, context.connectionId),
+      ...(overrides?.sourceControlAiResolvedParams
+        ? { sourceControlAiResolvedParams: overrides.sourceControlAiResolvedParams }
+        : {}),
+      ...(overrides?.sourceControlAi ? { sourceControlAi: overrides.sourceControlAi } : {}),
+      ...(overrides?.agentCmdOverrides ? { agentCmdOverrides: overrides.agentCmdOverrides } : {})
     },
     { timeoutMs: 75_000 }
   )

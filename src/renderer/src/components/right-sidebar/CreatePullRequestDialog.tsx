@@ -124,6 +124,7 @@ export function CreatePullRequestDialog({
     worktreePath,
     branch,
     eligibility,
+    repo,
     settings,
     submitting,
     prCreationDefaults,

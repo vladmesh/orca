@@ -1740,8 +1740,7 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   pointer-events: none;
 }
 
-.orca-contextual-tour-target-rings::before,
-.orca-contextual-tour-target-rings::after {
+.orca-contextual-tour-target-rings::before {
   content: '';
   position: absolute;
   inset: -2px;
@@ -1751,10 +1750,6 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   opacity: 0;
   transform-origin: center;
   animation: contextual-tour-target-ring 1.8s ease-out infinite;
-}
-
-.orca-contextual-tour-target-rings::after {
-  animation-delay: 0.45s;
 }
 
 @keyframes contextual-tour-target-ring {
@@ -1770,8 +1765,7 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .orca-contextual-tour-target-rings::before,
-  .orca-contextual-tour-target-rings::after {
+  .orca-contextual-tour-target-rings::before {
     animation: none;
     opacity: 0.72;
     transform: scale(1.28);

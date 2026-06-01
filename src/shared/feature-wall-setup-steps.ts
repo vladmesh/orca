@@ -27,7 +27,7 @@ export const FEATURE_WALL_SETUP_STEPS: readonly FeatureWallSetupStep[] = [
     id: 'split-terminal',
     name: 'Run two things at once',
     subtitle: 'Run two things at once',
-    description: 'Keep an agent, dev server, or REPL visible side by side in one workspace.'
+    description: 'Keep an agent, dev server, or REPL visible side by side in one worktree.'
   },
   {
     id: 'two-worktrees',

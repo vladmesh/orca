@@ -1085,6 +1085,70 @@ describe('CodexHookService', () => {
     )
   })
 
+  it('repairs duplicate runtime trust keys copied into launch-home config', () => {
+    const service = new CodexHookService()
+    expect(service.install().state).toBe('installed')
+
+    const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
+    const managedHooksPath = join(managedCodexHome, 'hooks.json')
+    const runtimeTomlPath = join(managedCodexHome, 'config.toml')
+    const launchHome = join(userDataDir, 'codex-runtime-home', 'launch', 'host', 'system', 'home')
+    mkdirSync(launchHome, { recursive: true })
+    writeFileSync(join(launchHome, 'hooks.json'), readFileSync(managedHooksPath, 'utf-8'))
+
+    const runtimeHeader = hookTrustHeader(`${managedHooksPath}:session_start:0:0`)
+    const installedToml = readFileSync(runtimeTomlPath, 'utf-8')
+    const sessionStartIndex = installedToml.indexOf(runtimeHeader)
+    expect(sessionStartIndex).not.toBe(-1)
+    const nextHeaderIndex = installedToml.indexOf('\n[', sessionStartIndex + runtimeHeader.length)
+    const sessionStartBlock = installedToml
+      .slice(sessionStartIndex, nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex)
+      .trimEnd()
+    const staleRuntimeBlock = sessionStartBlock.replace(
+      /trusted_hash = "[^"]+"/,
+      'trusted_hash = "sha256:STALE_LAUNCH_COPY"'
+    )
+    const disabledSessionStartBlock = sessionStartBlock.replace('enabled = true', 'enabled = false')
+    writeFileSync(
+      runtimeTomlPath,
+      `${installedToml.slice(0, sessionStartIndex)}${disabledSessionStartBlock}${installedToml.slice(
+        nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex
+      )}`,
+      'utf-8'
+    )
+    const launchHooksTrustPath = join(realpathSync.native(launchHome), 'hooks.json')
+    const staleLaunchBlock = sessionStartBlock.replace(
+      runtimeHeader,
+      literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)
+    )
+    writeFileSync(
+      join(launchHome, 'config.toml'),
+      `${installedToml.slice(
+        0,
+        sessionStartIndex
+      )}${staleRuntimeBlock}\n\n${sessionStartBlock}\n\n${staleLaunchBlock}${installedToml.slice(
+        nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex
+      )}`,
+      'utf-8'
+    )
+    expect(
+      readFileSync(join(launchHome, 'config.toml'), 'utf-8').split(runtimeHeader)
+    ).toHaveLength(3)
+
+    trustCodexLaunchHomeHooks(launchHome)
+
+    const repairedToml = readFileSync(join(launchHome, 'config.toml'), 'utf-8')
+    expect(repairedToml.split(runtimeHeader)).toHaveLength(2)
+    expect(repairedToml).not.toContain('STALE_LAUNCH_COPY')
+    expect(repairedToml).toContain(`${runtimeHeader}\nenabled = false`)
+    expect(repairedToml).toContain(
+      literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)
+    )
+    expect(repairedToml).toContain(
+      `${literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)}\nenabled = false`
+    )
+  })
+
   it('repairs duplicate managed SessionStart trust tables on restart install', () => {
     const systemCodexHome = join(tmpHome, '.codex')
     mkdirSync(systemCodexHome, { recursive: true })

@@ -556,9 +556,15 @@ export function trustCodexLaunchHomeHooks(launchHomePath: string): void {
         if (runtimeState?.trustedHash !== trustedHash) {
           return
         }
+        // Why: stale Windows launch-home copies can already contain duplicate
+        // runtime-home keys; upserting them here self-heals the copied TOML
+        // before Codex parses it.
+        const runtimeKey = computeTrustKey(runtimeEntry)
+        launchTrustBlocks.push({ key: runtimeKey, trustedHash })
         const launchKey = computeTrustKeyWithSourcePath(runtimeEntry, launchTrustSourcePath)
         launchTrustBlocks.push({ key: launchKey, trustedHash })
         if (runtimeState.enabled !== undefined) {
+          launchTrustStates.push({ key: runtimeKey, enabled: runtimeState.enabled })
           launchTrustStates.push({ key: launchKey, enabled: runtimeState.enabled })
         }
       })

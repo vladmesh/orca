@@ -9,6 +9,7 @@ import {
   mkdirSync,
   readlinkSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync
@@ -195,6 +196,33 @@ function getWslLaunchCodexHomePath(wslHome: string, accountId: string | null): s
     segment,
     'home'
   )
+}
+
+function escapeTomlBasicString(value: string): string {
+  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+}
+
+function hookTrustHeader(key: string): string {
+  return `[hooks.state."${escapeTomlBasicString(canonicalizeHookTrustKeyForTest(key))}"]`
+}
+
+function literalHookTrustHeader(key: string): string {
+  return `[hooks.state."${escapeTomlBasicString(key)}"]`
+}
+
+function canonicalizeHookTrustKeyForTest(key: string): string {
+  const lastColon = key.lastIndexOf(':')
+  const secondLast = lastColon === -1 ? -1 : key.lastIndexOf(':', lastColon - 1)
+  const thirdLast = secondLast === -1 ? -1 : key.lastIndexOf(':', secondLast - 1)
+  if (thirdLast === -1) {
+    return key
+  }
+  const sourcePath = key.slice(0, thirdLast)
+  try {
+    return `${realpathSync.native(sourcePath)}${key.slice(thirdLast)}`
+  } catch {
+    return key
+  }
 }
 
 function normalizeLinkTarget(linkTarget: string): string {
@@ -1051,6 +1079,56 @@ describe('CodexRuntimeHomeService', () => {
     expect(runtimeConfig).toContain('model = "runtime-model"')
     expect(runtimeConfig).toContain('model_reasoning_effort = "low"')
     expect(runtimeConfig).not.toContain('model = "system-model"')
+  })
+
+  it('repairs duplicate runtime hook trust tables copied into the host launch home before launch', async () => {
+    const { CodexHookService } = await import('../codex/hook-service')
+    expect(new CodexHookService().install().state).toBe('installed')
+
+    const runtimeHome = getRuntimeCodexHomePath()
+    const runtimeHooksPath = join(runtimeHome, 'hooks.json')
+    const runtimeTomlPath = join(runtimeHome, 'config.toml')
+    const launchHome = getSystemLaunchCodexHomePath()
+    mkdirSync(launchHome, { recursive: true })
+    writeFileSync(join(launchHome, 'hooks.json'), readFileSync(runtimeHooksPath, 'utf-8'), 'utf-8')
+
+    const runtimeHeader = hookTrustHeader(`${runtimeHooksPath}:session_start:0:0`)
+    const installedToml = readFileSync(runtimeTomlPath, 'utf-8')
+    const sessionStartIndex = installedToml.indexOf(runtimeHeader)
+    expect(sessionStartIndex).not.toBe(-1)
+    const nextHeaderIndex = installedToml.indexOf('\n[', sessionStartIndex + runtimeHeader.length)
+    const sessionStartBlock = installedToml
+      .slice(sessionStartIndex, nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex)
+      .trimEnd()
+    const staleRuntimeBlock = sessionStartBlock.replace(
+      /trusted_hash = "[^"]+"/,
+      'trusted_hash = "sha256:STALE_LAUNCH_COPY"'
+    )
+    writeFileSync(
+      join(launchHome, 'config.toml'),
+      `${installedToml.slice(
+        0,
+        sessionStartIndex
+      )}${staleRuntimeBlock}\n\n${sessionStartBlock}${installedToml.slice(
+        nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex
+      )}`,
+      'utf-8'
+    )
+
+    const store = createStore(createSettings())
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const service = new CodexRuntimeHomeService(store as never)
+
+    service.prepareForCodexLaunch()
+
+    const repairedToml = readFileSync(join(launchHome, 'config.toml'), 'utf-8')
+    expect(repairedToml.split(runtimeHeader)).toHaveLength(2)
+    expect(repairedToml).not.toContain('STALE_LAUNCH_COPY')
+    expect(repairedToml).toContain(
+      literalHookTrustHeader(
+        `${join(realpathSync.native(launchHome), 'hooks.json')}:session_start:0:0`
+      )
+    )
   })
 
   it('links system Codex user resources into the managed runtime home before launch', async () => {

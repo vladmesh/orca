@@ -9,6 +9,7 @@ import { pruneLocalTerminalScrollbackBuffers } from '../../../shared/workspace-s
 import { normalizeBrowserHistoryEntries } from '../../../shared/workspace-session-browser-history'
 import type { AppState } from '../store'
 import type { OpenFile } from '../store/slices/editor'
+import { buildPersistedUnifiedTabSessionData } from './workspace-session-unified-tabs'
 
 /** Why (issue #1158): the debounced + shutdown session writers share this
  *  gate so a hydration failure cannot overwrite orca-data.json with the
@@ -361,10 +362,10 @@ export function buildWorkspaceSessionPayload(
     // the payload boundary so stale renderer state cannot make every session
     // write stringify an oversized legacy history array.
     browserUrlHistory: normalizeBrowserHistoryEntries(snapshot.browserUrlHistory),
-    unifiedTabs: snapshot.unifiedTabsByWorktree,
-    tabGroups: snapshot.groupsByWorktree,
-    tabGroupLayouts: snapshot.layoutByWorktree,
-    activeGroupIdByWorktree: snapshot.activeGroupIdByWorktree,
+    // Why: split creation and tab creation are separate renderer updates.
+    // Persist only layouts backed by real tabs so a reload cannot restore a
+    // blank split pane from that transient midpoint.
+    ...buildPersistedUnifiedTabSessionData(snapshot),
     activeConnectionIdsAtShutdown: buildActiveConnectionIdsAtShutdown(snapshot),
     remoteSessionIdsByTabId: terminalSessionData.remoteSessionIdsByTabId,
     // Why: per-worktree focus-recency for Cmd+J's empty-query ordering.

@@ -11,6 +11,7 @@ import {
   buildTerminalSessionData,
   type WorkspaceSessionSnapshot
 } from './workspace-session'
+import { buildPersistedUnifiedTabSessionData } from './workspace-session-unified-tabs'
 
 type SessionRelevantField = keyof WorkspaceSessionSnapshot
 
@@ -111,17 +112,15 @@ export function buildWorkspaceSessionPatch(
   if (changed.has('browserUrlHistory')) {
     patch.browserUrlHistory = normalizeBrowserHistoryEntries(snapshot.browserUrlHistory)
   }
-  if (changed.has('unifiedTabsByWorktree')) {
-    patch.unifiedTabs = snapshot.unifiedTabsByWorktree
-  }
-  if (changed.has('groupsByWorktree')) {
-    patch.tabGroups = snapshot.groupsByWorktree
-  }
-  if (changed.has('layoutByWorktree')) {
-    patch.tabGroupLayouts = snapshot.layoutByWorktree
-  }
-  if (changed.has('activeGroupIdByWorktree')) {
-    patch.activeGroupIdByWorktree = snapshot.activeGroupIdByWorktree
+  if (
+    hasAnyChangedField(changed, [
+      'activeGroupIdByWorktree',
+      'groupsByWorktree',
+      'layoutByWorktree',
+      'unifiedTabsByWorktree'
+    ] as const)
+  ) {
+    Object.assign(patch, buildPersistedUnifiedTabSessionData(snapshot))
   }
   if (changed.has('lastVisitedAtByWorktreeId')) {
     patch.lastVisitedAtByWorktreeId = buildLastVisitedAtByWorktreeId(snapshot)

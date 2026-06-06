@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const appStoreSnapshot: {
   activeTabId: string | null
-  activeTabType: 'terminal' | 'editor' | 'browser' | null
+  activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator' | null
   unifiedTabsByWorktree: Record<string, unknown[]>
   activeGroupIdByWorktree: Record<string, string>
 } = {
@@ -20,7 +20,7 @@ const useAppStoreMock = vi.fn(
   (
     selector: (state: {
       activeTabId: string | null
-      activeTabType: 'terminal' | 'editor' | 'browser' | null
+      activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator' | null
       gitStatusByWorktree: Record<string, never[]>
       unifiedTabsByWorktree: Record<string, unknown[]>
       activeGroupIdByWorktree: Record<string, string>

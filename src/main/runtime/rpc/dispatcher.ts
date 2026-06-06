@@ -16,7 +16,13 @@ import {
 import type { TerminalStreamFrame } from '../../../shared/terminal-stream-protocol'
 import type { FeatureInteractionId } from '../../../shared/feature-interactions'
 import { isBrowserPaneUiRuntimeRpcParams } from '../../../shared/runtime-rpc-feature-interaction-source'
-import { errorResponse, mapBrowserError, mapRuntimeError, successResponse } from './errors'
+import {
+  errorResponse,
+  mapBrowserError,
+  mapEmulatorError,
+  mapRuntimeError,
+  successResponse
+} from './errors'
 import { ALL_RPC_METHODS } from './methods'
 import type { OrcaRuntimeService } from '../orca-runtime'
 
@@ -190,6 +196,9 @@ export class RpcDispatcher {
     if (request.method.startsWith('browser.')) {
       return mapBrowserError(request.id, meta, error)
     }
+    if (request.method.startsWith('emulator.')) {
+      return mapEmulatorError(request.id, meta, error)
+    }
     if (error instanceof ZodError) {
       return errorResponse(request.id, meta, 'invalid_argument', formatZodError(error))
     }
@@ -241,6 +250,11 @@ function getRuntimeFeatureInteractionId(
   }
   if (method.startsWith('browser.') && !method.startsWith('browser.profile')) {
     return 'agent-browser-use'
+  }
+  if (method.startsWith('emulator.')) {
+    // Emulator commands are allowed from terminal/CLI (workspace-scoped, like other automation).
+    // Return null to indicate no special feature-interaction restriction (or add 'emulator-use' later).
+    return null
   }
   if (method === 'computer.permissions') {
     return 'computer-use-setup'

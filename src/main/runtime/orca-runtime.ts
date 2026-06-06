@@ -176,6 +176,9 @@ import type {
 } from '../../shared/runtime-types'
 import type { AutomationService } from '../automations/service'
 import { RuntimeBrowserCommands } from './orca-runtime-browser'
+import { RuntimeEmulatorCommands, setEmulatorBridge } from './orca-runtime-emulator'
+import { serveSimStateWatcher } from '../emulator/serve-sim-state-watcher'
+import type { EmulatorBridge } from '../emulator/emulator-bridge'
 import { RuntimeFileCommands } from './orca-runtime-files'
 import { RuntimeGitCommands } from './orca-runtime-git'
 import { joinWorktreeRelativePath } from './runtime-relative-paths'
@@ -1300,6 +1303,7 @@ export class OrcaRuntimeService {
   private clientEventListeners = new Set<(event: RuntimeClientEvent) => void>()
   private forkBackfillStarted = false
   private agentBrowserBridge: AgentBrowserBridge | null = null
+  private emulatorBridge: EmulatorBridge | null = null
   private resolvedWorktreeCache: ResolvedWorktreeCache | null = null
   private resolvedWorktreeInFlight: ResolvedWorktreeInFlight | null = null
   private resolvedWorktreeGeneration = 0
@@ -1986,6 +1990,15 @@ export class OrcaRuntimeService {
 
   getAgentBrowserBridge(): AgentBrowserBridge | null {
     return this.agentBrowserBridge
+  }
+
+  setEmulatorBridge(bridge: EmulatorBridge | null): void {
+    this.emulatorBridge = bridge
+    setEmulatorBridge(bridge)
+  }
+
+  getEmulatorBridge(): EmulatorBridge | null {
+    return this.emulatorBridge
   }
 
   attachWindow(windowId: number): void {
@@ -3013,6 +3026,7 @@ export class OrcaRuntimeService {
     // `Network: https://local.example.com:3001/`) so the workspace ports
     // panel can surface them in place of the kernel bind address.
     advertisedUrlWatcher.ingest(ptyId, data, at)
+    serveSimStateWatcher.ingestPtyOutput(ptyId, data)
     // Ordering invariant (DO NOT REORDER): maybeHydrateHeadlessFromRenderer
     // MUST run before trackHeadlessTerminalData so the eager-state pattern
     // (set headlessTerminals + writeChain head = seedPromise) is in place
@@ -4305,6 +4319,7 @@ export class OrcaRuntimeService {
 
   onPtyExit(ptyId: string, exitCode: number): void {
     advertisedUrlWatcher.unbindPty(ptyId)
+    serveSimStateWatcher.unbindPty(ptyId)
     // Clean up new mobile state for this PTY
     this.mobileSubscribers.delete(ptyId)
     this.mobileDisplayModes.delete(ptyId)
@@ -10129,6 +10144,7 @@ export class OrcaRuntimeService {
     // purge history and process-local caches before the ID points at new state.
     store.removeWorktreeMeta(worktreeId)
     advertisedUrlWatcher.forgetWorktree(worktreeId)
+    serveSimStateWatcher.forgetWorktree(worktreeId)
     deleteWorktreeHistoryDir(worktreeId)
   }
 
@@ -12084,6 +12100,7 @@ export class OrcaRuntimeService {
       // Why: restored/controller-discovered PTYs learn their worktree here
       // without registerPty(), so URL enrichment must bind at this source.
       advertisedUrlWatcher.bindPty(ptyId, worktreeId)
+      serveSimStateWatcher.bindPty(ptyId, worktreeId)
       return pty
     }
 
@@ -12113,6 +12130,7 @@ export class OrcaRuntimeService {
     // Why: recordPtyWorktree is the common lifecycle point for every path that
     // resolves a PTY's worktree, including renderer restore and controller list.
     advertisedUrlWatcher.bindPty(ptyId, worktreeId)
+    serveSimStateWatcher.bindPty(ptyId, worktreeId)
     return pty
   }
 
@@ -13789,6 +13807,12 @@ export class OrcaRuntimeService {
     getAvailableAuthoritativeWindow: () => this.getAvailableAuthoritativeWindow()
   })
 
+  private readonly emulatorCommands = new RuntimeEmulatorCommands({
+    getEmulatorBridge: () => this.emulatorBridge,
+    resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
+    getAuthoritativeWindow: () => this.getAuthoritativeWindow()
+  })
+
   browserSnapshot: RuntimeBrowserCommands['browserSnapshot'] =
     this.browserCommands.browserSnapshot.bind(this.browserCommands)
 
@@ -14192,6 +14216,49 @@ export class OrcaRuntimeService {
 
   browserTabClose: RuntimeBrowserCommands['browserTabClose'] =
     this.browserCommands.browserTabClose.bind(this.browserCommands)
+
+  // Emulator bindings (delegated to dedicated commands for surface separation).
+  emulatorTap: RuntimeEmulatorCommands['emulatorTap'] = this.emulatorCommands.emulatorTap.bind(
+    this.emulatorCommands
+  )
+  emulatorGesture: RuntimeEmulatorCommands['emulatorGesture'] =
+    this.emulatorCommands.emulatorGesture.bind(this.emulatorCommands)
+  emulatorType: RuntimeEmulatorCommands['emulatorType'] = this.emulatorCommands.emulatorType.bind(
+    this.emulatorCommands
+  )
+  emulatorButton: RuntimeEmulatorCommands['emulatorButton'] =
+    this.emulatorCommands.emulatorButton.bind(this.emulatorCommands)
+  emulatorRotate: RuntimeEmulatorCommands['emulatorRotate'] =
+    this.emulatorCommands.emulatorRotate.bind(this.emulatorCommands)
+  emulatorExec: RuntimeEmulatorCommands['emulatorExec'] = this.emulatorCommands.emulatorExec.bind(
+    this.emulatorCommands
+  )
+  emulatorAttach: RuntimeEmulatorCommands['emulatorAttach'] =
+    this.emulatorCommands.emulatorAttach.bind(this.emulatorCommands)
+  emulatorList: RuntimeEmulatorCommands['emulatorList'] = this.emulatorCommands.emulatorList.bind(
+    this.emulatorCommands
+  )
+  emulatorKill: RuntimeEmulatorCommands['emulatorKill'] = this.emulatorCommands.emulatorKill.bind(
+    this.emulatorCommands
+  )
+  emulatorShutdown: RuntimeEmulatorCommands['emulatorShutdown'] =
+    this.emulatorCommands.emulatorShutdown.bind(this.emulatorCommands)
+  emulatorListSimulators: RuntimeEmulatorCommands['emulatorListSimulators'] =
+    this.emulatorCommands.emulatorListSimulators.bind(this.emulatorCommands)
+  emulatorUnregisterActive: RuntimeEmulatorCommands['emulatorUnregisterActive'] =
+    this.emulatorCommands.emulatorUnregisterActive.bind(this.emulatorCommands)
+
+  // Why: serve-sim-state-watcher runs from main/index.ts startup; keep window IPC behind runtime (getAuthoritativeWindow is private).
+  notifyEmulatorAutoAttachFromWatcher(
+    worktreeId: string,
+    info: { deviceUdid: string; streamUrl: string; wsUrl: string; axUrl?: string }
+  ): void {
+    try {
+      this.getAuthoritativeWindow().webContents.send('ui:emulatorAutoAttach', { worktreeId, info })
+    } catch {
+      // Window may not exist during shutdown
+    }
+  }
 
   private getAuthoritativeWindow(): BrowserWindow {
     const win = this.getAvailableAuthoritativeWindow()

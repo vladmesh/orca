@@ -5,7 +5,7 @@
  * more clarity than the ~5 lines of bloat is worth. */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SortableContext } from '@dnd-kit/sortable'
-import { FilePlus, FileText, Globe, Plus, TerminalSquare } from 'lucide-react'
+import { FilePlus, FileText, Globe, Plus, Smartphone, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import type {
   BrowserTab as BrowserTabState,
@@ -55,6 +55,7 @@ import type { TabCreateEntryArgs } from './tab-create-entry-action'
 import { buildTabAgentLaunchOptions, orderTabLaunchAgents } from './tab-agent-launch-options'
 
 const isWindows = navigator.userAgent.includes('Windows')
+const isMacOs = navigator.userAgent.includes('Mac')
 const NEW_TAB_MENU_TERMINAL_FOCUS_RETRY_MS = 50
 const NEW_TAB_MENU_TERMINAL_FOCUS_TIMEOUT_MS = 5000
 type GitStatusEntries = ReturnType<typeof useAppStore.getState>['gitStatusByWorktree'][string]
@@ -76,6 +77,7 @@ type TabBarProps = {
   /** On Windows, opens a new terminal with a specific shell instead of the default. */
   onNewTerminalWithShell?: (shell: string) => void
   onNewBrowserTab: () => void
+  onNewSimulatorTab?: () => void
   onOpenEntry?: (args: TabCreateEntryArgs) => Promise<void>
   terminalOnly?: boolean
   showAgentLaunchItems?: boolean
@@ -89,6 +91,7 @@ type TabBarProps = {
   browserTabs?: (BrowserTabState & { tabId?: string })[]
   activeFileId?: string | null
   activeBrowserTabId?: string | null
+  activeSimulatorTabId?: string | null
   activeTabType?: WorkspaceVisibleTabType
   onActivateFile?: (fileId: string) => void
   onCloseFile?: (fileId: string) => void
@@ -128,6 +131,13 @@ type TabItem =
       isPinned: boolean
       data: BrowserTabState & { tabId?: string }
     }
+  | {
+      type: 'simulator'
+      id: string
+      unifiedTabId: string
+      isPinned: boolean
+      data: Tab
+    }
 
 function getTabDragLabel(item: TabItem, generatedTitlesEnabled: boolean): string {
   if (item.type === 'terminal') {
@@ -135,6 +145,9 @@ function getTabDragLabel(item: TabItem, generatedTitlesEnabled: boolean): string
   }
   if (item.type === 'browser') {
     return getBrowserTabLabel(item.data)
+  }
+  if (item.type === 'simulator') {
+    return item.data.label || 'Mobile Emulator'
   }
   return getEditorDisplayLabel(item.data)
 }
@@ -166,6 +179,7 @@ function TabBarInner({
   onNewTerminalTab,
   onNewTerminalWithShell,
   onNewBrowserTab,
+  onNewSimulatorTab,
   onOpenEntry,
   terminalOnly = false,
   showAgentLaunchItems = true,
@@ -179,6 +193,7 @@ function TabBarInner({
   browserTabs,
   activeFileId,
   activeBrowserTabId,
+  activeSimulatorTabId,
   activeTabType,
   onActivateFile,
   onCloseFile,
@@ -194,6 +209,7 @@ function TabBarInner({
 }: TabBarProps): React.JSX.Element {
   const newTerminalShortcut = useShortcutLabel('tab.newTerminal')
   const newBrowserShortcut = useShortcutLabel('tab.newBrowser')
+  const newSimulatorShortcut = useShortcutLabel('tab.newSimulator')
   const newFileShortcut = useShortcutLabel('tab.newMarkdown')
   const generatedTabTitlesEnabled = useAppStore((s) => s.settings?.tabAutoGenerateTitle === true)
   const gitStatusEntries = useAppStore(
@@ -306,7 +322,7 @@ function TabBarInner({
   ): void => {
     const state = useAppStore.getState()
     if (
-      state.activeTabType === 'terminal' &&
+      (state.activeTabType === 'terminal' || state.activeTabType === 'simulator') &&
       state.activeTabId &&
       state.activeTabId !== previousActiveTabId
     ) {
@@ -466,6 +482,17 @@ function TabBarInner({
       <DropdownMenuShortcut>{newBrowserShortcut}</DropdownMenuShortcut>
     </DropdownMenuItem>
   ) : null
+  const newSimulatorMenuItem =
+    !terminalOnly && isMacOs && onNewSimulatorTab ? (
+      <DropdownMenuItem
+        onSelect={onNewSimulatorTab}
+        className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+      >
+        <Smartphone className="size-4 text-muted-foreground" />
+        New Mobile Emulator
+        <DropdownMenuShortcut>{newSimulatorShortcut}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+    ) : null
   const newMarkdownMenuItem =
     !terminalOnly && onNewFileTab ? (
       <DropdownMenuItem
@@ -494,6 +521,7 @@ function TabBarInner({
         {openMarkdownMenuItem}
         {defaultTerminalMenuItems}
         {newBrowserMenuItem}
+        {newSimulatorMenuItem}
       </>
     ) : (
       <>
@@ -501,6 +529,7 @@ function TabBarInner({
         {newBrowserMenuItem}
         {newMarkdownMenuItem}
         {openMarkdownMenuItem}
+        {newSimulatorMenuItem}
       </>
     )
 
@@ -526,10 +555,23 @@ function TabBarInner({
   const terminalIds = useMemo(() => tabs.map((t) => t.id), [tabs])
   const editorFileIds = useMemo(() => editorFiles?.map((f) => f.tabId ?? f.id) ?? [], [editorFiles])
   const browserTabIds = useMemo(() => browserTabs?.map((tab) => tab.id) ?? [], [browserTabs])
+  const simulatorTabIds = useMemo(
+    () =>
+      (unifiedTabs ?? [])
+        .filter((t) => t.groupId === resolvedGroupId && t.contentType === 'simulator')
+        .map((t) => t.id),
+    [unifiedTabs, resolvedGroupId]
+  )
 
   // Build the unified ordered list, reconciling stored order with current items
   const orderedItems = useMemo(() => {
-    const ids = reconcileTabOrder(tabBarOrder, terminalIds, editorFileIds, browserTabIds)
+    const ids = reconcileTabOrder(
+      tabBarOrder,
+      terminalIds,
+      editorFileIds,
+      browserTabIds,
+      simulatorTabIds
+    )
     const items: TabItem[] = []
     for (const id of ids) {
       const terminal = terminalMap.get(id)
@@ -568,6 +610,17 @@ function TabBarInner({
         })
         continue
       }
+      const simUnified = unifiedTabByVisibleId.get(id)
+      if (simUnified && simUnified.contentType === 'simulator') {
+        items.push({
+          type: 'simulator',
+          id,
+          unifiedTabId: simUnified.id,
+          isPinned: simUnified.isPinned === true,
+          data: simUnified
+        })
+        continue
+      }
     }
     return items
   }, [
@@ -575,6 +628,7 @@ function TabBarInner({
     terminalIds,
     editorFileIds,
     browserTabIds,
+    simulatorTabIds,
     terminalMap,
     editorMap,
     browserMap,
@@ -764,7 +818,10 @@ function TabBarInner({
                   tab={terminalTab}
                   tabCount={orderedItems.length}
                   hasTabsToRight={index < orderedItems.length - 1}
-                  isActive={activeTabType === 'terminal' && item.id === activeTabId}
+                  isActive={
+                    (activeTabType === 'terminal' || activeTabType === 'simulator') &&
+                    item.id === activeTabId
+                  }
                   isPinned={item.isPinned}
                   isExpanded={expandedPaneByTabId[item.id] === true}
                   onActivate={onActivate}
@@ -804,11 +861,49 @@ function TabBarInner({
                 />
               )
             }
+            if (item.type === 'simulator') {
+              const simLabel = item.data.label || 'Mobile Emulator'
+              const simFile: OpenFile & { tabId: string } = {
+                id: item.id,
+                tabId: item.id,
+                filePath: simLabel,
+                relativePath: simLabel,
+                worktreeId,
+                language: 'simulator',
+                isPreview: false,
+                isDirty: false,
+                mode: 'edit'
+              }
+              return (
+                <EditorFileTab
+                  key={item.id}
+                  file={simFile}
+                  isActive={activeTabType === 'simulator' && item.id === activeSimulatorTabId}
+                  isPinned={item.isPinned}
+                  hasTabsToRight={index < orderedItems.length - 1}
+                  statusByRelativePath={statusByRelativePath}
+                  onActivate={() => onActivateFile?.(item.id)}
+                  onClose={() => onCloseFile?.(item.id)}
+                  onCloseToRight={() => onCloseToRight(item.id)}
+                  onCloseAll={() => onCloseAllFiles?.()}
+                  onMakePermanent={() => {}}
+                  onTogglePin={() => togglePinned(item)}
+                  onSplitGroup={(direction, sourceVisibleTabId) =>
+                    onCreateSplitGroup?.(direction, sourceVisibleTabId)
+                  }
+                  dragData={dragData}
+                  dropIndicator={dropIndicatorByVisibleId.get(item.id) ?? null}
+                />
+              )
+            }
             return (
               <EditorFileTab
                 key={item.id}
                 file={item.data}
-                isActive={activeTabType === 'editor' && activeFileId === item.id}
+                isActive={
+                  (activeTabType === 'editor' || activeTabType === 'simulator') &&
+                  activeFileId === item.id
+                }
                 isPinned={item.isPinned}
                 hasTabsToRight={index < orderedItems.length - 1}
                 statusByRelativePath={statusByRelativePath}

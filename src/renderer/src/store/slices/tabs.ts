@@ -25,7 +25,7 @@ import {
   sanitizeRecentTabIds,
   updateGroup
 } from './tab-group-state'
-import { buildHydratedTabState } from './tabs-hydration'
+import { buildHydratedTabState, pruneTabGroupLayoutForGroups } from './tabs-hydration'
 import { buildOrphanTerminalCleanupPatch, getOrphanTerminalIds } from './terminal-orphan-helpers'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
@@ -286,7 +286,10 @@ function collapseGroupLayout(
 }
 
 function toVisibleTabType(contentType: TabContentType): WorkspaceVisibleTabType {
-  return contentType === 'browser' ? 'browser' : contentType === 'terminal' ? 'terminal' : 'editor'
+  if (contentType === 'browser' || contentType === 'terminal' || contentType === 'simulator') {
+    return contentType
+  }
+  return 'editor'
 }
 
 function deriveActiveSurfaceForWorktree(
@@ -1528,13 +1531,16 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
       if (tab.contentType === 'browser') {
         return liveBrowserIds.has(tab.entityId)
       }
+      if (tab.contentType === 'simulator') {
+        return true
+      }
       return liveEditorIds.has(tab.entityId)
     }
 
     const validTabs = reconciledUnifiedTabs.filter(isRenderableTab)
     const validTabIds = new Set(validTabs.map((tab) => tab.id))
 
-    const nextGroups = reconciledGroups.map((group) => {
+    const nextGroupsWithEmpty = reconciledGroups.map((group) => {
       const tabOrder = group.tabOrder.filter((tabId) => validTabIds.has(tabId))
       const activeTabId =
         group.activeTabId && validTabIds.has(group.activeTabId)
@@ -1554,6 +1560,10 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
         ? group
         : { ...group, tabOrder, activeTabId, recentTabIds }
     })
+    const nextGroups =
+      validTabs.length > 0
+        ? nextGroupsWithEmpty.filter((group) => group.tabOrder.length > 0)
+        : nextGroupsWithEmpty
 
     const currentActiveGroupId =
       state.activeGroupIdByWorktree[worktreeId] ??
@@ -1571,12 +1581,27 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
     const tabsChanged = validTabs.length !== unifiedTabs.length || restoredLegacyTabs.length > 0
     const activeGroupChanged = nextActiveGroupId !== currentActiveGroupId
 
-    const nextLayout =
+    const baseNextLayout =
       restoredLegacyTabs.length > 0 && reconciliationGroup
         ? (state.layoutByWorktree[worktreeId] ?? { type: 'leaf', groupId: reconciliationGroup.id })
         : state.layoutByWorktree[worktreeId]
+    const validGroupIds = new Set(nextGroups.map((group) => group.id))
+    const prunedNextLayout =
+      baseNextLayout && validGroupIds.size > 0
+        ? pruneTabGroupLayoutForGroups(baseNextLayout, validGroupIds)
+        : baseNextLayout
+    const nextLayout =
+      prunedNextLayout ?? (nextGroups[0] ? { type: 'leaf', groupId: nextGroups[0].id } : undefined)
+    const currentLayout = state.layoutByWorktree[worktreeId]
+    const layoutChanged = nextLayout !== currentLayout
 
-    if (tabsChanged || groupsChanged || activeGroupChanged || orphanTerminalIds.size > 0) {
+    if (
+      tabsChanged ||
+      groupsChanged ||
+      activeGroupChanged ||
+      layoutChanged ||
+      orphanTerminalIds.size > 0
+    ) {
       // Why: when reconcile drops a unified terminal tab (stale persisted id,
       // dead PTY, closed editor), its entry in unreadTerminalTabs (keyed by the
       // terminal tab's entityId) would otherwise linger forever and bleed into
@@ -1616,7 +1641,7 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
           ...(nextUnreadTerminalTabs !== current.unreadTerminalTabs
             ? { unreadTerminalTabs: nextUnreadTerminalTabs }
             : {}),
-          ...(restoredLegacyTabs.length > 0
+          ...(nextLayout && layoutChanged
             ? {
                 layoutByWorktree: {
                   ...current.layoutByWorktree,

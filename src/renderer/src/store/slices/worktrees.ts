@@ -231,7 +231,10 @@ function areDetectedWorktreeResultsEqual(
 }
 
 function toVisibleTabType(contentType: string): WorkspaceVisibleTabType {
-  return contentType === 'browser' ? 'browser' : contentType === 'terminal' ? 'terminal' : 'editor'
+  if (contentType === 'browser' || contentType === 'terminal' || contentType === 'simulator') {
+    return contentType
+  }
+  return 'editor'
 }
 
 const FORCE_RETRYABLE_WORKTREE_REMOVAL_MESSAGES = [

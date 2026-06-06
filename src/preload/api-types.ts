@@ -418,6 +418,16 @@ export type BrowserApi = {
   notifyActiveTabChanged: (args: { browserPageId: string }) => Promise<boolean>
 }
 
+export type EmulatorApi = {
+  onPaneFocus: (callback: (data: { worktreeId: string }) => void) => () => void
+  onAutoAttach: (
+    callback: (data: {
+      worktreeId: string
+      info: { deviceUdid: string; streamUrl: string; wsUrl: string; axUrl?: string }
+    }) => void
+  ) => () => void
+}
+
 export type DetectedBrowserProfileInfo = {
   name: string
   directory: string
@@ -1702,6 +1712,7 @@ export type PreloadApi = {
     delete: (id: string, fileName: string, kind?: 'image' | 'bundle') => Promise<void>
   }
   browser: BrowserApi
+  emulator: EmulatorApi
   hooks: {
     check: (args: { repoId: string }) => Promise<{
       status?: 'ok' | 'error'
@@ -2082,6 +2093,7 @@ export type PreloadApi = {
     onWorktreeHistoryNavigate: (callback: (direction: 'back' | 'forward') => void) => () => void
     onNewBrowserTab: (callback: () => void) => () => void
     onNewMarkdownTab: (callback: () => void) => () => void
+    onNewSimulatorTab: (callback: () => void) => () => void
     onRequestTabCreate: (
       callback: (data: {
         requestId: string

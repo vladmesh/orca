@@ -795,6 +795,13 @@ export type BrowserErrorCode =
   | 'browser_timeout'
   | 'browser_error'
 
+export type EmulatorErrorCode =
+  | 'emulator_no_active'
+  | 'emulator_device_not_found'
+  | 'emulator_helper_failed'
+  | 'emulator_not_macos'
+  | 'emulator_error'
+
 // Computer-use types (see docs/computer-use/plan.md §4 and §12.6).
 
 export const COMPUTER_ERROR_CODES = {

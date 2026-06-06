@@ -828,6 +828,7 @@ describe('setActiveWorktree', () => {
         ]
       },
       activeGroupIdByWorktree: { [wt]: groupId },
+      layoutByWorktree: { [wt]: { type: 'leaf', groupId } },
       everActivatedWorktreeIds: new Set([wt]),
       refreshGitHubForWorktree: vi.fn(),
       refreshGitHubForWorktreeIfStale: vi.fn()

@@ -441,9 +441,15 @@ export type TabGroupLayoutNode =
     }
 
 // ─── Unified Tab ────────────────────────────────────────────────────
-export type TabContentType = 'terminal' | 'editor' | 'diff' | 'conflict-review' | 'browser'
+export type TabContentType =
+  | 'terminal'
+  | 'editor'
+  | 'diff'
+  | 'conflict-review'
+  | 'browser'
+  | 'simulator'
 
-export type WorkspaceVisibleTabType = 'terminal' | 'editor' | 'browser'
+export type WorkspaceVisibleTabType = 'terminal' | 'editor' | 'browser' | 'simulator'
 export type CtrlTabOrderMode = 'mru' | 'sequential'
 
 export type Tab = {

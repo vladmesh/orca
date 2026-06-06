@@ -79,6 +79,7 @@
     "node-pty": "^1.1.0",
     "posthog-node": "^5.33.3",
     "qrcode": "^1.5.4",
+    "serve-sim": "^0.1.40",
     "sherpa-onnx": "1.12.37",
     "ssh2": "^1.17.0",
     "tweetnacl": "^1.0.3",

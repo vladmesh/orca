@@ -2070,6 +2070,31 @@ const api = {
       ipcRenderer.invoke('browser:activeTabChanged', args)
   },
 
+  emulator: {
+    onPaneFocus: (callback: (data: { worktreeId: string }) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { worktreeId: string }) =>
+        callback(data)
+      ipcRenderer.on('emulator:pane-focus', listener)
+      return () => ipcRenderer.removeListener('emulator:pane-focus', listener)
+    },
+    onAutoAttach: (
+      callback: (data: {
+        worktreeId: string
+        info: { deviceUdid: string; streamUrl: string; wsUrl: string; axUrl?: string }
+      }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: {
+          worktreeId: string
+          info: { deviceUdid: string; streamUrl: string; wsUrl: string; axUrl?: string }
+        }
+      ) => callback(data)
+      ipcRenderer.on('ui:emulatorAutoAttach', listener)
+      return () => ipcRenderer.removeListener('ui:emulatorAutoAttach', listener)
+    }
+  },
+
   hooks: {
     check: (args: {
       repoId: string
@@ -2570,6 +2595,11 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
       ipcRenderer.on('ui:newMarkdownTab', listener)
       return () => ipcRenderer.removeListener('ui:newMarkdownTab', listener)
+    },
+    onNewSimulatorTab: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('ui:newSimulatorTab', listener)
+      return () => ipcRenderer.removeListener('ui:newSimulatorTab', listener)
     },
     onRequestTabCreate: (
       callback: (data: {

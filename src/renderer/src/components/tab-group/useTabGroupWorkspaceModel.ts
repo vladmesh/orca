@@ -24,6 +24,7 @@ import {
   isWebRuntimeSessionActive
 } from '../../runtime/web-runtime-session'
 import { openTabBarEntry, type TabCreateEntryArgs } from '../tab-bar/tab-create-entry-action'
+import { ensureSimulatorTab } from '@/lib/ensure-simulator-tab'
 
 export function recordTerminalTabGroupSplit(createdTerminal: TerminalTab | null | undefined): void {
   if (!createdTerminal) {
@@ -252,6 +253,8 @@ export function useTabGroupWorkspaceModel({
       } else if (item.contentType === 'browser') {
         destroyWorkspaceWebviews(useAppStore.getState().browserPagesByWorkspace, item.entityId)
         closeBrowserTab(item.entityId)
+      } else if (item.contentType === 'simulator') {
+        closeUnifiedTab(item.id)
       } else {
         const canCloseTab = closeEditorIfUnreferenced(item.entityId, item.id)
         if (!canCloseTab) {
@@ -300,6 +303,8 @@ export function useTabGroupWorkspaceModel({
         } else if (item.contentType === 'browser') {
           destroyWorkspaceWebviews(useAppStore.getState().browserPagesByWorkspace, item.entityId)
           closeBrowserTab(item.entityId)
+        } else if (item.contentType === 'simulator') {
+          closeUnifiedTab(item.id)
         } else {
           const canCloseTab = closeEditorIfUnreferenced(item.entityId, item.id)
           if (canCloseTab) {
@@ -370,8 +375,13 @@ export function useTabGroupWorkspaceModel({
       }
       focusGroup(worktreeId, groupId)
       activateTab(item.id)
-      setActiveFile(item.entityId)
-      setActiveTabType('editor')
+      if (item.contentType === 'simulator') {
+        setActiveTabType('simulator')
+        // simulator has no editor file entity
+      } else {
+        setActiveFile(item.entityId)
+        setActiveTabType('editor')
+      }
     },
     [activateTab, focusGroup, groupId, groupTabs, setActiveFile, setActiveTabType, worktreeId]
   )
@@ -560,6 +570,19 @@ export function useTabGroupWorkspaceModel({
       createSplitGroup,
       newBrowserTab: () => {
         void openNewBrowserTabInActiveWorkspace(groupId)
+      },
+      newSimulatorTab: () => {
+        // Why: mobile simulators are most useful beside the current tab group.
+        // Re-open focuses the existing worktree simulator instead of spawning duplicates.
+        const wtId = useAppStore.getState().activeWorktreeId
+        if (!wtId) {
+          return
+        }
+        ensureSimulatorTab(wtId, {
+          placement: 'rightSplit',
+          targetGroupId: groupId,
+          surfacePane: true
+        })
       },
       openEntry: async (args: TabCreateEntryArgs) => {
         await openTabBarEntry(args)

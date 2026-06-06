@@ -341,6 +341,11 @@ export function setupGuestShortcutForwarding(args: {
     }
     if (keybindingMatchesAction('tab.newBrowser', input, process.platform, keybindings)) {
       renderer.send('ui:newBrowserTab')
+    } else if (
+      process.platform === 'darwin' &&
+      keybindingMatchesAction('tab.newSimulator', input, process.platform, keybindings)
+    ) {
+      renderer.send('ui:newSimulatorTab')
     } else if (keybindingMatchesAction('tab.newMarkdown', input, process.platform, keybindings)) {
       renderer.send('ui:newMarkdownTab')
     } else if (keybindingMatchesAction('tab.newTerminal', input, process.platform, keybindings)) {

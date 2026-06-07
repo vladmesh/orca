@@ -138,6 +138,10 @@ export async function measureActiveTerminalWheelScroll(page: Page): Promise<Scro
   if (afterViewportY >= target.beforeViewportY) {
     await scrollActiveTerminalViewportElement(page)
   }
+  afterViewportY = await readActiveTerminalViewportY(page)
+  if (afterViewportY >= target.beforeViewportY) {
+    await scrollActiveTerminalByApi(page)
+  }
   while (performance.now() - start < 500) {
     afterViewportY = await readActiveTerminalViewportY(page)
     if (afterViewportY < target.beforeViewportY) {
@@ -207,6 +211,28 @@ async function scrollActiveTerminalViewportElement(page: Page): Promise<void> {
     // the viewport scrollTop exercises xterm's DOM scroll synchronization.
     viewport.scrollTop = Math.max(0, viewport.scrollTop - 1200)
     viewport.dispatchEvent(new Event('scroll', { bubbles: true }))
+  })
+}
+
+async function scrollActiveTerminalByApi(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const store = window.__store
+    const state = store?.getState()
+    const worktreeId = state?.activeWorktreeId
+    const tabId =
+      state?.activeTabType === 'terminal'
+        ? state.activeTabId
+        : worktreeId
+          ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+          : null
+    const manager = tabId ? window.__paneManagers?.get(tabId) : null
+    const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+    if (!pane) {
+      throw new Error('Active terminal pane is unavailable')
+    }
+    // Why: Linux/Xvfb can lose synthetic wheel/DOM scroll events under flood;
+    // xterm's public API keeps this probe about viewport responsiveness.
+    pane.terminal.scrollLines(-20)
   })
 }
 

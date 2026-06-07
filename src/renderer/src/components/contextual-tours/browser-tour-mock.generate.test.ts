@@ -448,7 +448,7 @@ describe('browser contextual tour mock generator', () => {
       <div class="when-note">
         <strong>When does this show?</strong>
         <ul>
-          <li>First time a <strong>new user</strong> opens the in-app browser on a <strong>loaded local page</strong> (not a blank tab, not a remote/SSH runtime browser).</li>
+          <li>First time a <strong>new user</strong> opens an in-app browser tab on a <strong>local desktop browser</strong> (not a remote/SSH runtime browser).</li>
           <li>Only once per profile, and only one contextual tour per session.</li>
           <li>Step 3 is the last step — it appears after Next on step 2. In production, advancing to step 3 would open the <strong>···</strong> menu automatically.</li>
         </ul>

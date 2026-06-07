@@ -4616,6 +4616,7 @@ function BrowserPagePane({
           browserPageId={browserTab.id}
           viewportPresetId={browserTab.viewportPresetId ?? null}
           onDestroyWebview={() => destroyPersistentWebview(browserTab.id)}
+          isActive={isActive}
         />
       </div>
       {downloadState ? (

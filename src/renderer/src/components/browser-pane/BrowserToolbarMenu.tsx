@@ -40,6 +40,7 @@ type BrowserToolbarMenuProps = {
   browserPageId: string
   viewportPresetId: BrowserViewportPresetId | null
   onDestroyWebview: () => void
+  isActive: boolean
 }
 
 export function BrowserToolbarMenu({
@@ -47,7 +48,8 @@ export function BrowserToolbarMenu({
   workspaceId,
   browserPageId,
   viewportPresetId,
-  onDestroyWebview
+  onDestroyWebview,
+  isActive
 }: BrowserToolbarMenuProps): React.JSX.Element {
   const browserSessionProfiles = useAppStore((s) => s.browserSessionProfiles)
   const detectedBrowsers = useAppStore((s) => s.detectedBrowsers)
@@ -61,6 +63,7 @@ export function BrowserToolbarMenu({
   const browserCookieTourStepActive = useAppStore(
     (s) => s.activeContextualTourId === 'browser' && s.activeContextualTourStepIndex >= 1
   )
+  const shouldForceMenuOpen = browserCookieTourStepActive && isActive
 
   const applyViewportPreset = (nextId: BrowserViewportPresetId | null): void => {
     setBrowserPageViewportPreset(browserPageId, nextId)
@@ -82,11 +85,11 @@ export function BrowserToolbarMenu({
     // Why: step 3's target lives inside this menu, and tour advancement only
     // visits steps whose targets are measurable. Open from step 2 onward so Next
     // can reach Import Cookies before the overlay's layout measurement runs.
-    setMenuOpen(browserCookieTourStepActive)
-  }, [browserCookieTourStepActive])
+    setMenuOpen(shouldForceMenuOpen)
+  }, [shouldForceMenuOpen])
 
   const handleMenuOpenChange = (open: boolean): void => {
-    if (browserCookieTourStepActive && !open) {
+    if (shouldForceMenuOpen && !open) {
       return
     }
     setMenuOpen(open)

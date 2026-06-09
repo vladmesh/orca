@@ -760,17 +760,15 @@ export class SshConnection {
 }
 
 export function shouldUseSystemSshTransport(
-  target: SshTarget,
-  resolved: Pick<SshResolvedConfig, 'proxyUseFdpass' | 'proxyCommand' | 'proxyJump'> | null
+  _target: SshTarget,
+  resolved: Pick<SshResolvedConfig, 'proxyUseFdpass'> | null
 ): boolean {
-  return (
-    process.env.ORCA_SSH_FORCE_SYSTEM_TRANSPORT === '1' ||
-    target.proxyCommand != null ||
-    target.jumpHost != null ||
-    resolved?.proxyUseFdpass === true ||
-    resolved?.proxyCommand != null ||
-    resolved?.proxyJump != null
-  )
+  // Why: only ProxyUseFdpass genuinely requires the system ssh binary (ssh2
+  // cannot consume a passed file descriptor). Plain ProxyCommand/ProxyJump
+  // targets connect over an ssh2 client via spawnProxyCommand's config.sock,
+  // which keeps SFTP (binary uploads) and client.forwardOut (port forwards)
+  // working — routing them to system transport silently breaks both.
+  return process.env.ORCA_SSH_FORCE_SYSTEM_TRANSPORT === '1' || resolved?.proxyUseFdpass === true
 }
 
 export { SshConnectionManager } from './ssh-connection-manager'

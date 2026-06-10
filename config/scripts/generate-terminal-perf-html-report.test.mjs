@@ -126,6 +126,25 @@ describe('generate-terminal-perf-html-report', () => {
     expect(html).not.toContain('browser-unrelated')
   })
 
+  it('renders parked-memory heap and live view counts as table metrics', () => {
+    const reportPath = writeReport(
+      'panes=8 parkedTabs=8 heapUsedMB=142.5 liveTerminals=1 livePaneManagers=1',
+      'opencode-parked-memory'
+    )
+    const outputPath = join(makeTempDir(), 'report.html')
+
+    const result = generateTerminalPerfHtmlReport({ inputPaths: [reportPath], outputPath })
+
+    const html = readFileSync(outputPath, 'utf8')
+    // Why: heapUsedMB has no budget — a memory row alone must not fail gates.
+    expect(result.budgetFailureCount).toBe(0)
+    expect(html).toContain('Parked hidden terminal memory — 8 panes')
+    expect(html).toContain('Renderer JS heap (MB)')
+    expect(html).toContain('142.5')
+    expect(html).toContain('Live xterm instances')
+    expect(html).toContain('Live pane managers')
+  })
+
   it('marks over-budget rows as failures for the latest run', () => {
     const reportPath = writeReport(
       [

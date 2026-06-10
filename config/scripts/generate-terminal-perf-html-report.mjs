@@ -30,7 +30,12 @@ const COUNT_METRICS = [
   { key: 'mainPeakInFlightChars', label: 'Main in-flight chars' },
   { key: 'mainPeakPendingChars', label: 'Main pending chars' },
   { key: 'hiddenSkippedChars', label: 'Hidden skipped chars' },
-  { key: 'rendererDroppedBacklogs', label: 'Renderer dropped backlogs' }
+  { key: 'rendererDroppedBacklogs', label: 'Renderer dropped backlogs' },
+  // Why: parked-memory scenarios are table-only — heap/view counts have no
+  // ms trend story, so they stay out of the charts.
+  { key: 'heapUsedMB', label: 'Renderer JS heap (MB)' },
+  { key: 'liveTerminals', label: 'Live xterm instances' },
+  { key: 'livePaneManagers', label: 'Live pane managers' }
 ]
 
 const SERIES_COLORS = {

@@ -20,7 +20,10 @@ const SCENARIO_LABELS = [
   ['opencode-cross-workspace-typing', 'Cross-workspace typing'],
   ['opencode-main-pressure', 'Main renderer pressure'],
   ['opencode-hidden-pressure', 'Hidden pressure'],
-  ['opencode-revisit-pressure', 'Revisit under pressure']
+  ['opencode-revisit-pressure', 'Revisit under pressure'],
+  // Why: the prefix also matches opencode-parked-memory-disabled, so both
+  // parked-memory scenarios group under one label.
+  ['opencode-parked-memory', 'Parked hidden terminal memory']
 ]
 
 export function readJsonReport(path) {
@@ -105,7 +108,12 @@ function normalizeRow(row) {
     mainPeakPendingChars: parseCount(row.mainPeakPendingChars),
     mainPeakInFlightChars: parseCount(row.mainPeakInFlightChars),
     heldAckChars: parseCount(row.heldAckChars),
-    hiddenSkippedChars: parseCount(row.hiddenSkippedChars)
+    hiddenSkippedChars: parseCount(row.hiddenSkippedChars),
+    // Why: parked-memory annotations report a fractional MB heap figure plus
+    // live renderer view counts; Number() keeps the MB float intact.
+    heapUsedMB: parseCount(row.heapUsedMB),
+    liveTerminals: parseCount(row.liveTerminals),
+    livePaneManagers: parseCount(row.livePaneManagers)
   }
 }
 

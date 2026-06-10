@@ -130,6 +130,20 @@ describe('check-terminal-perf-report-budgets', () => {
     expect(output).toContain('Terminal perf budget check passed for 1 annotation row(s).')
   })
 
+  it('accepts parked-memory rows that carry only heap and view-count metrics', () => {
+    const reportPath = writeReport(
+      'panes=8 parkedTabs=8 heapUsedMB=87.8 liveTerminals=1 livePaneManagers=1',
+      'opencode-parked-memory'
+    )
+
+    const output = execFileSync(process.execPath, [scriptPath, reportPath], {
+      cwd: process.cwd(),
+      encoding: 'utf8'
+    })
+
+    expect(output).toContain('Terminal perf budget check passed for 1 annotation row(s).')
+  })
+
   it('fails OpenCode annotation rows that contain no budget metrics', () => {
     const reportPath = writeReport('panes=1 frames=60')
 

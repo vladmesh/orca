@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { ArrowUpRight, Loader2, Terminal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { translate } from '@/i18n/i18n'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
 import { FeatureSetupInlineTerminal } from '../onboarding/FeatureSetupInlineTerminal'
@@ -41,12 +42,12 @@ export function BrowserAction(props: { done: boolean }): React.JSX.Element {
     } else {
       toast.warning(
         translate(
-          'auto.components.feature.wall.FeatureWallBrowserAction.7b8ce1c20b',
+          'auto.components.feature.wall.FeatureWallBrowserAction.5022c43a88',
           'Browser could not open'
         ),
         {
           description: translate(
-            'auto.components.feature.wall.FeatureWallBrowserAction.f443baa44c',
+            'auto.components.feature.wall.FeatureWallBrowserAction.c9eb68b474',
             'No workspace group is available for this worktree yet.'
           )
         }
@@ -60,7 +61,7 @@ export function BrowserAction(props: { done: boolean }): React.JSX.Element {
         <Button type="button" size="sm" className="w-fit gap-2" onClick={handleTryIt}>
           <ArrowUpRight className="size-3.5" />
           {translate(
-            'auto.components.feature.wall.FeatureWallBrowserAction.c460b1878f',
+            'auto.components.feature.wall.FeatureWallBrowserAction.c9728107c5',
             'Try it out'
           )}
         </Button>
@@ -97,7 +98,7 @@ function BrowserSkillInstallButton(): React.JSX.Element {
       if (firstWarning) {
         toast.warning(
           translate(
-            'auto.components.feature.wall.FeatureWallBrowserAction.2ec90dfbe6',
+            'auto.components.feature.wall.FeatureWallBrowserAction.25dd101f15',
             'Browser setup needs attention'
           ),
           { description: firstWarning.message }
@@ -105,12 +106,12 @@ function BrowserSkillInstallButton(): React.JSX.Element {
       } else if (result.skillCommandsCopied) {
         toast.success(
           translate(
-            'auto.components.feature.wall.FeatureWallBrowserAction.f7bc7b2d56',
+            'auto.components.feature.wall.FeatureWallBrowserAction.e02b11e6b0',
             'Browser setup ready'
           ),
           {
             description: translate(
-              'auto.components.feature.wall.FeatureWallBrowserAction.439dc3a070',
+              'auto.components.feature.wall.FeatureWallBrowserAction.d6d15077df',
               'Skill command copied and inserted below for review.'
             )
           }
@@ -123,7 +124,7 @@ function BrowserSkillInstallButton(): React.JSX.Element {
       console.error('Browser setup failed', error)
       toast.error(
         translate(
-          'auto.components.feature.wall.FeatureWallBrowserAction.b6a28615f9',
+          'auto.components.feature.wall.FeatureWallBrowserAction.78e65f19d9',
           'Browser setup failed'
         ),
         {
@@ -131,7 +132,7 @@ function BrowserSkillInstallButton(): React.JSX.Element {
             error instanceof Error
               ? error.message
               : translate(
-                  'auto.components.feature.wall.FeatureWallBrowserAction.099b9769ea',
+                  'auto.components.feature.wall.FeatureWallBrowserAction.b7345c18db',
                   'An unexpected error occurred.'
                 )
         }
@@ -157,11 +158,11 @@ function BrowserSkillInstallButton(): React.JSX.Element {
       {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Terminal className="size-3.5" />}
       {busy
         ? translate(
-            'auto.components.feature.wall.FeatureWallBrowserAction.dcc4fe62a6',
+            'auto.components.feature.wall.FeatureWallBrowserAction.5f97caf76b',
             'Installing…'
           )
         : translate(
-            'auto.components.feature.wall.FeatureWallBrowserAction.77d4abb2de',
+            'auto.components.feature.wall.FeatureWallBrowserAction.c2df599513',
             'Install CLI & Skill'
           )}
     </Button>

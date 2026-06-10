@@ -111,9 +111,9 @@ export function buildTabCreateMenuOptions(
         label,
         shell: entry.shell,
         keywords: [
-          translate('auto.components.tab.bar.tab.create.menu.options.1194e950db', 'terminal'),
-          translate('auto.components.tab.bar.tab.create.menu.options.1b5abf645a', 'shell'),
-          translate('auto.components.tab.bar.tab.create.menu.options.750359d55a', 'new terminal'),
+          translate('auto.components.tab.bar.tab.create.menu.options.5501c2fb7a', 'terminal'),
+          translate('auto.components.tab.bar.tab.create.menu.options.9630dd5494', 'shell'),
+          translate('auto.components.tab.bar.tab.create.menu.options.a094576900', 'new terminal'),
           entry.label,
           label
         ]
@@ -126,10 +126,10 @@ export function buildTabCreateMenuOptions(
       kind: 'new-terminal',
       label,
       keywords: [
-        translate('auto.components.tab.bar.tab.create.menu.options.1194e950db', 'terminal'),
-        translate('auto.components.tab.bar.tab.create.menu.options.1b5abf645a', 'shell'),
-        translate('auto.components.tab.bar.tab.create.menu.options.750359d55a', 'new terminal'),
-        translate('auto.components.tab.bar.tab.create.menu.options.95f396af14', 'new shell')
+        translate('auto.components.tab.bar.tab.create.menu.options.5501c2fb7a', 'terminal'),
+        translate('auto.components.tab.bar.tab.create.menu.options.9630dd5494', 'shell'),
+        translate('auto.components.tab.bar.tab.create.menu.options.a094576900', 'new terminal'),
+        translate('auto.components.tab.bar.tab.create.menu.options.4f23f4d01d', 'new shell')
       ]
     })
   }
@@ -141,10 +141,10 @@ export function buildTabCreateMenuOptions(
       kind: 'new-browser',
       label,
       keywords: [
-        translate('auto.components.tab.bar.tab.create.menu.options.6cf3424376', 'browser'),
-        translate('auto.components.tab.bar.tab.create.menu.options.ce4935fc32', 'new browser'),
-        translate('auto.components.tab.bar.tab.create.menu.options.83aae83863', 'browser tab'),
-        translate('auto.components.tab.bar.tab.create.menu.options.09ca68efc1', 'web')
+        translate('auto.components.tab.bar.tab.create.menu.options.4f2a91e15b', 'browser'),
+        translate('auto.components.tab.bar.tab.create.menu.options.6d0e6a4b7a', 'new browser'),
+        translate('auto.components.tab.bar.tab.create.menu.options.c87ad57785', 'browser tab'),
+        translate('auto.components.tab.bar.tab.create.menu.options.cce7ef1d2c', 'web')
       ]
     })
   }
@@ -156,11 +156,11 @@ export function buildTabCreateMenuOptions(
       kind: 'new-markdown',
       label,
       keywords: [
-        translate('auto.components.tab.bar.tab.create.menu.options.510b4c429d', 'markdown'),
-        translate('auto.components.tab.bar.tab.create.menu.options.6838c20f51', 'md'),
-        translate('auto.components.tab.bar.tab.create.menu.options.c2834deca5', 'new markdown'),
-        translate('auto.components.tab.bar.tab.create.menu.options.31022ec7ca', 'new file'),
-        translate('auto.components.tab.bar.tab.create.menu.options.7ca162223b', 'mark')
+        translate('auto.components.tab.bar.tab.create.menu.options.5f17fb9d0c', 'markdown'),
+        translate('auto.components.tab.bar.tab.create.menu.options.44caaf7b36', 'md'),
+        translate('auto.components.tab.bar.tab.create.menu.options.fb50e3d874', 'new markdown'),
+        translate('auto.components.tab.bar.tab.create.menu.options.6d8b6b4117', 'new file'),
+        translate('auto.components.tab.bar.tab.create.menu.options.b330f72434', 'mark')
       ]
     })
   }
@@ -172,10 +172,10 @@ export function buildTabCreateMenuOptions(
       kind: 'open-markdown',
       label,
       keywords: [
-        translate('auto.components.tab.bar.tab.create.menu.options.4beedb2cd4', 'open markdown'),
-        translate('auto.components.tab.bar.tab.create.menu.options.510b4c429d', 'markdown'),
-        translate('auto.components.tab.bar.tab.create.menu.options.6838c20f51', 'md'),
-        translate('auto.components.tab.bar.tab.create.menu.options.10228caebb', 'open file')
+        translate('auto.components.tab.bar.tab.create.menu.options.37ff3ddca1', 'open markdown'),
+        translate('auto.components.tab.bar.tab.create.menu.options.5f17fb9d0c', 'markdown'),
+        translate('auto.components.tab.bar.tab.create.menu.options.44caaf7b36', 'md'),
+        translate('auto.components.tab.bar.tab.create.menu.options.164c394bab', 'open file')
       ]
     })
   }
@@ -189,13 +189,13 @@ export function buildTabCreateMenuOptions(
       kind: context.simulatorIsGoTo ? 'go-to-simulator' : 'new-simulator',
       label,
       keywords: [
-        translate('auto.components.tab.bar.tab.create.menu.options.673d13fa0f', 'mobile emulator'),
-        translate('auto.components.tab.bar.tab.create.menu.options.2a2ca7479d', 'emulator'),
-        translate('auto.components.tab.bar.tab.create.menu.options.399203df1d', 'simulator'),
-        translate('auto.components.tab.bar.tab.create.menu.options.6997aefe9a', 'ios simulator'),
-        translate('auto.components.tab.bar.tab.create.menu.options.1f74e459db', 'iphone'),
-        translate('auto.components.tab.bar.tab.create.menu.options.e291fa97bd', 'ipad'),
-        translate('auto.components.tab.bar.tab.create.menu.options.705de13db9', 'mobile')
+        translate('auto.components.tab.bar.tab.create.menu.options.bbaf4f85a4', 'mobile emulator'),
+        translate('auto.components.tab.bar.tab.create.menu.options.3784b83bd4', 'emulator'),
+        translate('auto.components.tab.bar.tab.create.menu.options.a63847a742', 'simulator'),
+        translate('auto.components.tab.bar.tab.create.menu.options.1baeb07c17', 'ios simulator'),
+        translate('auto.components.tab.bar.tab.create.menu.options.8a580f88cf', 'iphone'),
+        translate('auto.components.tab.bar.tab.create.menu.options.7ecdc5ef08', 'ipad'),
+        translate('auto.components.tab.bar.tab.create.menu.options.14965cc123', 'mobile')
       ]
     })
   }

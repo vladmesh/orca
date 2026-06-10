@@ -1031,7 +1031,7 @@ function PRReviewersPanel({
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {translate('auto.components.PullRequestPage.ae9a38fd4a', 'Remove reviewer')}
+                        {translate('auto.components.PullRequestPage.7f964a365a', 'Remove reviewer')}
                       </TooltipContent>
                     </Tooltip>
                   ) : null}

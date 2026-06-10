@@ -21,6 +21,11 @@ type AutoFilledCreateParent = {
   runtimeEnvironmentId: string | null
 }
 
+type CreateParentProvenance = {
+  parent: string
+  runtimeEnvironmentId: string | null
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | null = null
   return new Promise<T>((resolve, reject) => {
@@ -60,7 +65,7 @@ export function useCreateProjectDefaults({
   createRuntimeParentStatus: CreateRuntimeParentStatus
   createParentDefaultPending: boolean
   resetCreateDefaultState: () => void
-  markCreateParentTouched: () => void
+  markCreateParentTouched: (value?: string) => void
   markCreateKindTouched: () => void
 } {
   const [createDefaultParent, setCreateDefaultParent] = useState('')
@@ -69,6 +74,7 @@ export function useCreateProjectDefaults({
     useState<CreateRuntimeParentStatus>('idle')
   const createStepAutoFilledRef = useRef(false)
   const autoFilledCreateParentRef = useRef<AutoFilledCreateParent | null>(null)
+  const createParentProvenanceRef = useRef<CreateParentProvenance | null>(null)
   const createParentTouchedRef = useRef(false)
   const createKindTouchedRef = useRef(false)
   const createParentDefaultGenRef = useRef(0)
@@ -88,6 +94,7 @@ export function useCreateProjectDefaults({
     createGitProbeGenRef.current++
     createStepAutoFilledRef.current = false
     autoFilledCreateParentRef.current = null
+    createParentProvenanceRef.current = null
     createParentTouchedRef.current = false
     createKindTouchedRef.current = false
     setCreateDefaultParent('')
@@ -96,10 +103,17 @@ export function useCreateProjectDefaults({
   }, [])
 
   // Why: a default must never clobber a parent or kind the user picked themselves.
-  const markCreateParentTouched = useCallback(() => {
-    autoFilledCreateParentRef.current = null
-    createParentTouchedRef.current = true
-  }, [])
+  const markCreateParentTouched = useCallback(
+    (value?: string) => {
+      autoFilledCreateParentRef.current = null
+      createParentProvenanceRef.current = {
+        parent: (value ?? createParent).trim(),
+        runtimeEnvironmentId: activeCreateParentRuntimeEnvironmentId
+      }
+      createParentTouchedRef.current = true
+    },
+    [activeCreateParentRuntimeEnvironmentId, createParent]
+  )
   const markCreateKindTouched = useCallback(() => {
     createKindTouchedRef.current = true
   }, [])
@@ -111,6 +125,13 @@ export function useCreateProjectDefaults({
     autoFilledCreateParentRef.current?.parent === createParent.trim() &&
     autoFilledCreateParentRef.current.runtimeEnvironmentId !==
       activeCreateParentRuntimeEnvironmentId
+  const createParentTargetPending =
+    step === 'create' &&
+    Boolean(createParent.trim()) &&
+    createParentProvenanceRef.current?.parent === createParent.trim() &&
+    createParentProvenanceRef.current.runtimeEnvironmentId !==
+      activeCreateParentRuntimeEnvironmentId
+  const createParentPending = createParentDefaultPending || createParentTargetPending
 
   useEffect(() => {
     if (step !== 'create') {
@@ -153,6 +174,7 @@ export function useCreateProjectDefaults({
         setCreateDefaultParent(parent)
         createStepAutoFilledRef.current = true
         autoFilledCreateParentRef.current = { parent, runtimeEnvironmentId: null }
+        createParentProvenanceRef.current = { parent, runtimeEnvironmentId: null }
         setCreateParent(parent)
       })
       .catch(() => {
@@ -215,6 +237,7 @@ export function useCreateProjectDefaults({
         const parent = getDefaultCreateProjectParent(result.resolvedPath)
         createStepAutoFilledRef.current = true
         autoFilledCreateParentRef.current = { parent, runtimeEnvironmentId }
+        createParentProvenanceRef.current = { parent, runtimeEnvironmentId }
         setCreateDefaultParent(parent)
         setCreateParent(parent)
         setCreateRuntimeParentStatus('idle')
@@ -276,7 +299,7 @@ export function useCreateProjectDefaults({
     createDefaultParent,
     createGitAvailability,
     createRuntimeParentStatus,
-    createParentDefaultPending,
+    createParentDefaultPending: createParentPending,
     resetCreateDefaultState,
     markCreateParentTouched,
     markCreateKindTouched

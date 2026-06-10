@@ -386,7 +386,7 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
             setCreateError(null)
           }}
           onCreateParentChange={(value) => {
-            markCreateParentTouched()
+            markCreateParentTouched(value)
             setCreateParent(value)
             setCreateError(null)
           }}

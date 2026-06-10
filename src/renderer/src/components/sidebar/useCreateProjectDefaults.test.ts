@@ -215,17 +215,26 @@ describe('useCreateProjectDefaults', () => {
     mocks.browseRuntimeServerDirectory.mockResolvedValue({ resolvedPath: '/home/alice' })
     mocks.callRuntimeRpc.mockResolvedValue({ available: true })
 
-    const local = useHarness()
-    local.result.markCreateParentTouched()
+    const local = useHarness({ createParent: '/Users/alice/orca/projects' })
+    local.result.markCreateParentTouched('/Users/alice/orca/projects/pr5115-target-switch')
 
     const runtime = useHarness({
       activeRuntimeEnvironmentId: 'env-1',
-      createParent: '/Users/alice/custom-projects'
+      createParent: '/Users/alice/orca/projects/pr5115-target-switch'
     })
     await flushAsync()
 
+    expect(runtime.result.createParentDefaultPending).toBe(true)
     expect(mocks.browseRuntimeServerDirectory).not.toHaveBeenCalled()
     expect(runtime.setCreateParent).not.toHaveBeenCalled()
+
+    runtime.result.markCreateParentTouched('/home/alice/projects')
+    const runtimeEdited = useHarness({
+      activeRuntimeEnvironmentId: 'env-1',
+      createParent: '/home/alice/projects'
+    })
+
+    expect(runtimeEdited.result.createParentDefaultPending).toBe(false)
   })
 
   it('marks the runtime parent lookup failed without filling a parent', async () => {

@@ -540,7 +540,7 @@ async function runLinearWrite<T>(
 async function runLinearLookup<T>(
   entry: LinearClientForWorkspace,
   lookup: () => Promise<T>
-): Promise<T> {
+): Promise<T | null> {
   await acquire()
   try {
     return await lookup()
@@ -549,10 +549,20 @@ async function runLinearLookup<T>(
       clearToken(entry.workspace.id)
       throw error
     }
+    if (isLinearLookupMiss(error)) {
+      return null
+    }
     throw error
   } finally {
     release()
   }
+}
+
+function isLinearLookupMiss(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  // Why: Linear throws for direct entity lookups that miss; write-id probes
+  // need the same null shape as GraphQL nullable data, not a failed write.
+  return message.includes('Entity not found:') && message.includes('Could not find referenced')
 }
 
 async function confirmLinearWrite<T>(message: string, readback: () => Promise<T>): Promise<T> {

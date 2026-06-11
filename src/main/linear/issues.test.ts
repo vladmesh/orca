@@ -381,6 +381,29 @@ describe('Linear issue queries', () => {
     ).rejects.toMatchObject({ kind: 'unconfirmed' })
   })
 
+  it('treats direct write-id lookup misses as null', async () => {
+    rawRequest
+      .mockRejectedValueOnce(
+        new Error('Entity not found: Issue - Could not find referenced Issue.')
+      )
+      .mockRejectedValueOnce(
+        new Error('Entity not found: Comment - Could not find referenced Comment.')
+      )
+      .mockRejectedValueOnce(
+        new Error('Entity not found: Attachment - Could not find referenced Attachment.')
+      )
+    getClients.mockReturnValue([{ ...makeEntry(), client: { client: { rawRequest } } }])
+    const { getIssueByUuidForAgent, getCommentByUuidForAgent, getAttachmentByUuidForAgent } =
+      await import('./issues')
+
+    await expect(getIssueByUuidForAgent('missing-issue', 'workspace-1')).resolves.toBeNull()
+    await expect(getCommentByUuidForAgent('missing-comment', 'workspace-1')).resolves.toBeNull()
+    await expect(
+      getAttachmentByUuidForAgent('missing-attachment', 'workspace-1')
+    ).resolves.toBeNull()
+    expect(clearToken).not.toHaveBeenCalled()
+  })
+
   it('sends threaded agent comments with a client supplied id', async () => {
     const createComment = vi.fn().mockResolvedValue({
       success: true,

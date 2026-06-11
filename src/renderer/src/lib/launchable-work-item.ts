@@ -16,6 +16,8 @@ export type LaunchableWorkItem = {
    *  `type: 'issue'` / `number: null` to reuse the GitHub draft-paste flow,
    *  so this field is the only signal that the worktree is Linear-linked. */
   linearIdentifier?: string
+  linearWorkspaceId?: string
+  linearOrganizationUrlKey?: string
   linkedContext?: LinkedWorkItemContext
 }
 

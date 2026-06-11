@@ -335,6 +335,8 @@ describe('mergeWorktree', () => {
       linkedIssue: 42,
       linkedPR: 10,
       linkedLinearIssue: null,
+      linkedLinearIssueWorkspaceId: null,
+      linkedLinearIssueOrganizationUrlKey: null,
       projectId: 'github:stablyai/orca',
       hostId: 'ssh:openclaw-2',
       projectHostSetupId: 'remote-repo',

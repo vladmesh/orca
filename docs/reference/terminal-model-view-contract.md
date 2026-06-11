@@ -38,9 +38,14 @@ depend on.
 5. Snapshots and live bytes have ordering metadata. A view restore must not
    duplicate bytes already included in the snapshot or drop bytes that arrived
    after it.
-6. Terminal query authority stays with the visible renderer when needed. The
-   headless model tracks state but must not answer DA, DSR, OSC 11, or other
-   shell/TUI queries that would inject replies into the PTY.
+6. Terminal query authority is singular and structural: the party that
+   writes a chunk into a live terminal answers its queries. Visible renderer
+   and remote views keep xterm authority. Chunks dropped by the
+   hidden-delivery gate are answered exactly once by the main model
+   responder, from runtime-emulator state plus renderer-pushed view
+   attributes. Replayed, seeded, or snapshot bytes are answered by no one.
+   The daemon emulator never answers. (Amended by Phase 5 — see
+   [`terminal-query-authority.md`](./terminal-query-authority.md).)
 7. The transcript contract stays separate from screen restore. `orca terminal
    read` must preserve bounded previews, cursor pagination, partial-line rules,
    truncation flags, and total counts even if view snapshots change shape.
@@ -116,7 +121,11 @@ Before moving more runtime behavior behind the model/view boundary, add or
 extend tests that prove:
 
 - headless snapshots rehydrate rich alternate-screen TUI state;
-- headless tracking does not answer DA, DSR, OSC 11, or theme-sensitive queries;
+- the daemon emulator never answers DA, DSR, OSC 11, or theme-sensitive
+  queries (the `session.test.ts` pins are permanent);
+- the main runtime responder answers queries only from live chunks the
+  hidden-delivery gate dropped — never delivered, replayed, seeded, or
+  remote-subscribed chunks;
 - hidden renderer overflow restores from model state without duplicate live
   output;
 - sleep/wake and worktree revisit restore from model-correct state;
@@ -135,6 +144,7 @@ Current coverage is spread across:
 - `src/main/runtime/rpc/terminal-subscribe-buffer.test.ts`
 - `src/main/runtime/rpc/terminal-multiplex.test.ts`
 - `src/main/runtime/orca-runtime.test.ts`
+- `src/main/runtime/terminal-query-responder.test.ts`
 - `src/renderer/src/components/terminal-pane/remote-runtime-pty-transport.test.ts`
 - `tests/e2e/terminal-hidden-tui-visual-restore.spec.ts`
 - `tests/e2e/terminal-sleep-wake-restore.spec.ts`

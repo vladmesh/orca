@@ -150,8 +150,13 @@ actually pushed. Snapshot parity: add `kittyKeyboardFlags` to `TerminalModes`
 for emulator re-seed parity only. `rehydrateSequences` must **not** push kitty
 flags into a renderer xterm — `POST_REPLAY_REATTACH_RESET`'s deliberate kitty
 reset (stale CSI-u Ctrl+C hazard, `terminal-replay-cursor-state.test.ts`)
-stays authoritative. A re-seeded emulator that lost flags answers `?0u`;
-protocol-conformant programs re-push.
+stays authoritative. Slice 3 wires the re-seed consumer: the daemon
+warm-reattach snapshot threads `modes.kittyKeyboardFlags` through the spawn
+result into `seedHeadlessTerminal`, which applies them to the fresh runtime
+emulator via its own `CSI = flags ; 1 u` parse (outside any forwarding
+window), so hidden `CSI ? u` reports the flags the hidden app actually
+pushed. Paths without a snapshot (cold restore spawns a fresh shell) answer
+`?0u`; protocol-conformant programs re-push.
 
 ### ConPTY DA1 variant
 
@@ -163,8 +168,8 @@ emulator parser (the main-side twin of
 the forwarding predicate. The override is installed at emulator creation and
 retrofitted when the spawn mark lands (daemon stream data can create the
 emulator before the awaited spawn response marks the PTY). ConPTY blocking on
-a missing DA1 is a spawn-time hazard; see the races section for the
-hidden-at-spawn loss window that remains until Phase 6.
+a missing DA1 is a spawn-time hazard; the hidden-at-spawn loss window is
+closed by the slice-3 `initiallyHidden` spawn flag (races section).
 
 ## Suppression: when main never replies
 
@@ -206,12 +211,17 @@ That is acceptable for state queries (DSR/CPR/DECRPM — TUIs re-probe or
 tolerate silence, as they did for every hidden pane before this phase). The
 one blocking-on-no-reply sequence, ConPTY DA1, only fires at spawn. A visible
 pane or an active codex startup window answers it from the renderer xterm.
-But a PTY spawned hidden **without** the startup window has no answerer until
-the renderer's hidden mark lands in main (one IPC hop after spawn): a DA1
-arriving in that pre-mark window is lost. That loss window is the pre-Phase-4
-hidden status quo and persists until Phase 6 marks hidden panes at spawn
-(spawn-record flag, below) — spawn-time ownership is not deterministic before
-then.
+A PTY spawned hidden **without** the startup window previously had no
+answerer until the renderer's hidden mark landed in main (one IPC hop after
+spawn). Slice 3 closes that window with the `initiallyHidden` spawn-record
+flag: the renderer declares hidden-at-spawn on `pty:spawn` (never while the
+codex startup window would run, and never for remote-runtime transports),
+and main marks the PTY hidden before the first byte — pre-spawn for
+daemon-host sessions whose id is minted up front, immediately after
+`provider.spawn` resolves otherwise — so the gate and responder own queries
+from byte one. The pane's first visibility sync then re-marks or unmarks
+through the existing Phase-4 machinery (unmark emits the restore marker for
+any spawn-window drops).
 
 ## Invariants
 
@@ -283,16 +293,26 @@ otherwise untouched in this phase.
 
 ## What Phase 6 (delete skip grammar + startup window) requires from this design
 
-- **Mark-before-first-byte**: panes spawned without a visible view must be
-  hidden-marked at spawn (spawn-record flag, not a renderer round trip) so
-  startup queries — including ConPTY's blocking DA1 and codex startup probes —
-  are main-owned from byte zero once the 10s window is gone.
-- **Attributes before spawn**: the renderer must push view attributes at app
-  start, before any hidden spawn, or spawn-time view-attribute queries fall
-  into the silent-until-push rule.
-- **Daemon shell-ready write gating** queues responder replies until the
-  ready marker; spawn-time replies on Windows daemon PTYs need explicit
-  validation before the window is removed.
+Accepted and shipped in slice 3 (except where noted):
+
+- **Mark-before-first-byte** (shipped): panes spawned without a visible view
+  are hidden-marked at spawn via the `initiallyHidden` flag on `pty:spawn`
+  (spawn-record flag, not a renderer round trip) so startup queries —
+  including ConPTY's blocking DA1 — are main-owned from byte zero. Codex
+  startup probes stay renderer-answered while the 10s window exists: the
+  renderer never sets the flag for codex startups; once Phase 6 deletes the
+  window, dropping that exclusion makes codex spawns main-owned too.
+- **Attributes before spawn** (shipped): the renderer pushes composed view
+  attributes once at app start (right after settings load, before terminal
+  reconnect/spawn), so spawn-time view-attribute queries no longer fall into
+  the silent-until-push rule. Per-pane appearance applies keep re-publishing
+  through the same deduped publisher.
+- **Daemon shell-ready write gating** (verified): responder replies through
+  `ptyController.write` → daemon `Session.write` are QUEUED pre-ready, never
+  dropped, and the queue flushes at the shell-ready marker or the 15s
+  `SHELL_READY_TIMEOUT_MS` bound (`session.ts`). Spawn-time replies on
+  Windows daemon PTYs still need explicit e2e validation before the codex
+  window is removed.
 - With the skip grammar deleted, every chunk is either written to a live
   xterm or dropped — the delivered-but-skipped no-reply gap disappears and
   the only remaining loss window is the mark IPC race.

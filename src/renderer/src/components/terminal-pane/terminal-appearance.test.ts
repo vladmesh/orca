@@ -7,9 +7,12 @@ import {
   hexToRgba,
   installMode2031Handlers,
   maybePushMode2031Flip,
-  mode2031SequenceFor
+  mode2031SequenceFor,
+  publishTerminalViewAttributesAtAppStart
 } from './terminal-appearance'
 import { replayIntoTerminal, type ReplayingPanesRef } from './replay-guard'
+import { _resetTerminalViewAttributesPublisherForTest } from './terminal-view-attributes-publisher'
+import type { TerminalViewAttributes } from '../../../../shared/terminal-view-attributes'
 
 function fakeTransport(overrides?: { connected?: boolean; sendOk?: boolean }): {
   isConnected: () => boolean
@@ -434,6 +437,71 @@ describe('applyTerminalAppearance theme assignment', () => {
 
     expect(pane.terminal.options.theme).not.toBe(firstTheme)
     expect(pane.terminal.options.theme?.background).toBe('#102030')
+  })
+})
+
+describe('publishTerminalViewAttributesAtAppStart', () => {
+  // Phase 6 prerequisite (terminal-query-authority.md): hidden-at-launch
+  // PTYs can query OSC 10/11 before any terminal pane mounts; the app-start
+  // publication must go out with no pane manager involved at all.
+  it('publishes composed attributes without any pane mount and dedupes repeats', () => {
+    _resetTerminalViewAttributesPublisherForTest()
+    const sent: TerminalViewAttributes[] = []
+    const send = (attributes: TerminalViewAttributes): boolean => {
+      sent.push(attributes)
+      return true
+    }
+    const settings = getDefaultSettings('/tmp')
+
+    expect(publishTerminalViewAttributesAtAppStart(settings, true, send)).toBe(true)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.ansi).toHaveLength(256)
+    expect(sent[0]!.cursorStyle).toBe(settings.terminalCursorStyle ?? 'block')
+
+    expect(publishTerminalViewAttributesAtAppStart(settings, true, send)).toBe(false)
+    expect(sent).toHaveLength(1)
+  })
+
+  it('makes the later pane-mount applyTerminalAppearance a deduped no-op re-push', () => {
+    _resetTerminalViewAttributesPublisherForTest()
+    const publishMock = vi.fn()
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: { pty: { publishTerminalViewAttributes: publishMock } }
+    }
+    try {
+      const settings = getDefaultSettings('/tmp')
+      publishTerminalViewAttributesAtAppStart(settings, true)
+      expect(publishMock).toHaveBeenCalledTimes(1)
+
+      // The first pane mount composes the identical app-global snapshot, so
+      // the publisher dedupe keeps it a single push.
+      const manager = {
+        getPanes: () => [],
+        setPaneLigaturesEnabled: vi.fn(),
+        setPaneStyleOptions: vi.fn()
+      } as unknown as PaneManager
+      applyTerminalAppearance(
+        manager,
+        settings,
+        true,
+        new Map(),
+        new Map(),
+        'false',
+        new Map(),
+        new Map()
+      )
+      expect(publishMock).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (globalThis as { window?: unknown }).window
+      _resetTerminalViewAttributesPublisherForTest()
+    }
+  })
+
+  it('publishes nothing before settings are loaded', () => {
+    _resetTerminalViewAttributesPublisherForTest()
+    const send = vi.fn(() => true)
+    expect(publishTerminalViewAttributesAtAppStart(null, true, send)).toBe(false)
+    expect(send).not.toHaveBeenCalled()
   })
 })
 

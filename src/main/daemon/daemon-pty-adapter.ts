@@ -216,12 +216,20 @@ export class DaemonPtyAdapter implements IPtyProvider {
 
     const isAltScreen = result.snapshot.modes.alternateScreen
     const snapshotPayload = result.snapshot.rehydrateSequences + result.snapshot.snapshotAnsi
+    // Why kitty flags ride beside the payload, not inside it: the snapshot
+    // string reaches renderer xterms too, where POST_REPLAY_REATTACH_RESET's
+    // deliberate kitty reset must win. Only the runtime emulator re-seed
+    // consumes the flags (terminal-query-authority.md §kitty).
+    const kittyKeyboardFlags = result.snapshot.modes.kittyKeyboardFlags
     return {
       id: sessionId,
       pid,
       snapshot: snapshotPayload,
       snapshotCols: result.snapshot.cols,
       snapshotRows: result.snapshot.rows,
+      ...(typeof kittyKeyboardFlags === 'number' && kittyKeyboardFlags > 0
+        ? { snapshotKittyKeyboardFlags: kittyKeyboardFlags }
+        : {}),
       isReattach: true,
       isAlternateScreen: isAltScreen
     }

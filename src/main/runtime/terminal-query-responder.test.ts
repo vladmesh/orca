@@ -295,6 +295,37 @@ describe('main-side replay guard', () => {
   })
 })
 
+describe('kitty flag re-seed parity (terminal-query-authority.md §kitty)', () => {
+  it('answers ?u with the persisted snapshot flags after a re-seed, silently applied', async () => {
+    const { runtime, replies } = createResponderRuntime()
+    markHiddenRendererPty('pty-kitty')
+
+    // Daemon warm-reattach threads modes.kittyKeyboardFlags through the
+    // spawn result into the seed; applying them is a seed-side write and
+    // must answer no one (main-side replay guard).
+    runtime.seedHeadlessTerminal('pty-kitty', 'restored prompt', undefined, {
+      kittyKeyboardFlags: 5
+    })
+    await settle(runtime, 'pty-kitty')
+    expect(replies).toEqual([])
+
+    runtime.onPtyData('pty-kitty', '\x1b[?u', Date.now())
+    await settle(runtime, 'pty-kitty')
+    expect(replies.map((reply) => reply.data)).toEqual(['\x1b[?5u'])
+  })
+
+  it('answers ?0u when the snapshot carried no flags (fresh-shell paths)', async () => {
+    const { runtime, replies } = createResponderRuntime()
+    markHiddenRendererPty('pty-kitty0')
+
+    runtime.seedHeadlessTerminal('pty-kitty0', 'restored prompt')
+    runtime.onPtyData('pty-kitty0', '\x1b[?u', Date.now())
+    await settle(runtime, 'pty-kitty0')
+
+    expect(replies.map((reply) => reply.data)).toEqual(['\x1b[?0u'])
+  })
+})
+
 describe('ingestion-time ownership capture', () => {
   const DA1 = '\x1b[c'
 

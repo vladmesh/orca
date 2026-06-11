@@ -1993,6 +1993,7 @@ export function connectPanePty(
         url: '',
         cols,
         rows,
+        ...(shouldDeclareHiddenAtSpawn() ? { initiallyHidden: true } : {}),
         callbacks: {
           onData: dataCallback,
           onReplayData: replayDataCallback,
@@ -2209,6 +2210,24 @@ export function connectPanePty(
         paneStartup !== null &&
         Date.now() < hiddenStartupRendererQueryUntil &&
         !shouldWritePtyOutputForeground(deps.isVisibleRef.current)
+      )
+    }
+
+    // Why: hidden/parked panes used to mark hidden only at the first
+    // dataCallback sync, leaving a spawn-time window where neither side
+    // answered queries (the non-codex DA1 loss). Declaring hidden on the
+    // spawn IPC lets main mark the PTY before its first byte. Codex startups
+    // are excluded — their startup window needs live renderer delivery, and
+    // the window predicate is checked at connect time (same tick the flag is
+    // sent), so the two decisions cannot disagree. Remote-runtime PTYs are
+    // never gate-markable (no local main transit).
+    function shouldDeclareHiddenAtSpawn(): boolean {
+      return (
+        hiddenDeliveryGateActive &&
+        !runtimeEnvironmentId &&
+        !disposed &&
+        !shouldWritePtyOutputForeground(deps.isVisibleRef.current) &&
+        !isHiddenStartupRendererQueryWindowActive()
       )
     }
 
@@ -3428,6 +3447,7 @@ export function connectPanePty(
               cols,
               rows,
               sessionId: pendingSessionId,
+              ...(shouldDeclareHiddenAtSpawn() ? { initiallyHidden: true } : {}),
               callbacks: {
                 onData: dataCallback,
                 onReplayData: replayDataCallback,
@@ -3565,6 +3585,7 @@ export function connectPanePty(
         cols,
         rows,
         sessionId: deferredReattachSessionId,
+        ...(shouldDeclareHiddenAtSpawn() ? { initiallyHidden: true } : {}),
         callbacks: {
           onData: dataCallback,
           onReplayData: replayDataCallback,

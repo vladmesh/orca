@@ -160,7 +160,11 @@ import {
   rebindLocalProviderListeners,
   unregisterSshPtyProvider
 } from './pty'
-import { _resetHiddenRendererPtyDeliveryGateForTest } from './pty-hidden-delivery-gate'
+import {
+  _resetHiddenRendererPtyDeliveryGateForTest,
+  isHiddenRendererPty
+} from './pty-hidden-delivery-gate'
+import { OrcaRuntimeService } from '../runtime/orca-runtime'
 import { hasLiveClaudePtys, markClaudePtySpawned } from '../claude-accounts/live-pty-gate'
 import {
   encodePowerShellCommand,
@@ -430,11 +434,12 @@ describe('registerPtyHandlers', () => {
     const spawn = vi.fn(async (options: { sessionId?: string }) => ({
       id: options.sessionId ?? 'daemon-pty'
     }))
+    const write = vi.fn()
     let dataHandler: ((payload: { id: string; data: string }) => void) | null = null
     let exitHandler: ((payload: { id: string; code: number }) => void) | null = null
     setLocalPtyProvider({
       spawn,
-      write: vi.fn(),
+      write,
       resize: vi.fn(),
       kill: vi.fn(),
       shutdown: vi.fn(),
@@ -463,6 +468,7 @@ describe('registerPtyHandlers', () => {
     } as never)
     return {
       spawn,
+      write,
       emitData: (id: string, data: string) => dataHandler?.({ id, data }),
       emitExit: (id: string, code = 0) => exitHandler?.({ id, code })
     }
@@ -5422,6 +5428,186 @@ describe('registerPtyHandlers', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+  })
+
+  describe('hidden-at-spawn mark (initiallyHidden)', () => {
+    // terminal-query-authority.md §races: the renderer declares hidden-at-
+    // spawn so main marks the PTY before its first byte — the spawn-time
+    // query window where neither side replied (the non-codex DA1 loss) is
+    // closed by the gate + responder owning queries from byte one.
+    function createRuntimeMock() {
+      return {
+        setPtyController: vi.fn(),
+        registerPty: vi.fn(),
+        noteTerminalSpawnCommand: vi.fn(),
+        onPtySpawned: vi.fn(),
+        onPtyExit: vi.fn(),
+        onPtyData: vi.fn(() => 42),
+        getPtyOutputSequence: vi.fn(() => 42),
+        createPreAllocatedTerminalHandle: vi.fn(() => 'terminal-handle-1'),
+        registerPreAllocatedHandleForPty: vi.fn()
+      }
+    }
+
+    it('marks a daemon PTY hidden before spawn resolves so byte zero is gated', async () => {
+      vi.useFakeTimers()
+      const runtime = createRuntimeMock()
+      const daemon = installObservableDaemonTestProvider()
+      const spawnGate = makeDeferred()
+      daemon.spawn.mockImplementation(async (options: { sessionId?: string }) => {
+        await spawnGate.promise
+        return { id: options.sessionId ?? 'daemon-pty' }
+      })
+      try {
+        registerPtyHandlers(mainWindow as never, runtime as never)
+        const spawnPromise = handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          sessionId: 'daemon-session',
+          initiallyHidden: true
+        }) as Promise<{ id: string }>
+        // Let the handler run up to the awaited provider.spawn.
+        await Promise.resolve()
+        mainWindow.webContents.send.mockClear()
+
+        // Daemon PTYs can emit prompt bytes before spawn() resolves — the
+        // pre-spawn mark must already gate them.
+        expect(isHiddenRendererPty('daemon-session')).toBe(true)
+        daemon.emitData('daemon-session', 'pre-spawn prompt\x1b[c')
+        vi.advanceTimersByTime(50)
+        expect(runtime.onPtyData).toHaveBeenCalledWith(
+          'daemon-session',
+          'pre-spawn prompt\x1b[c',
+          expect.any(Number)
+        )
+        expect(mainWindow.webContents.send).toHaveBeenCalledTimes(1)
+        expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:modelRestoreNeeded', {
+          id: 'daemon-session',
+          reason: 'hidden-drop',
+          markerSeq: 42
+        })
+
+        spawnGate.resolve()
+        const result = await spawnPromise
+        expect(isHiddenRendererPty(result.id)).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('clears the pre-spawn hidden mark when the spawn fails', async () => {
+      const daemon = installObservableDaemonTestProvider()
+      daemon.spawn.mockRejectedValue(new Error('spawn exploded'))
+      registerPtyHandlers(mainWindow as never)
+
+      await expect(
+        handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          sessionId: 'daemon-session',
+          initiallyHidden: true
+        })
+      ).rejects.toThrow('spawn exploded')
+
+      // A later visible attach reusing this session id must not start gated.
+      expect(isHiddenRendererPty('daemon-session')).toBe(false)
+    })
+
+    it('marks local PTYs hidden after spawn, before their first data task', async () => {
+      vi.useFakeTimers()
+      const mockProc = createMockProc()
+      spawnMock.mockReturnValue(mockProc.proc)
+      try {
+        registerPtyHandlers(mainWindow as never)
+        const spawnResult = (await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp',
+          initiallyHidden: true
+        })) as { id: string }
+        mainWindow.webContents.send.mockClear()
+
+        expect(isHiddenRendererPty(spawnResult.id)).toBe(true)
+        mockProc.emitData('first chunk')
+        vi.advanceTimersByTime(8)
+
+        expect(mainWindow.webContents.send).toHaveBeenCalledTimes(1)
+        expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:modelRestoreNeeded', {
+          id: spawnResult.id,
+          reason: 'hidden-drop'
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps spawns without the flag delivering to the renderer (visible unchanged)', async () => {
+      vi.useFakeTimers()
+      const mockProc = createMockProc()
+      spawnMock.mockReturnValue(mockProc.proc)
+      try {
+        registerPtyHandlers(mainWindow as never)
+        const spawnResult = (await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })) as { id: string }
+        mainWindow.webContents.send.mockClear()
+
+        expect(isHiddenRendererPty(spawnResult.id)).toBe(false)
+        mockProc.emitData('visible output')
+        vi.advanceTimersByTime(8)
+
+        expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+          id: spawnResult.id,
+          data: 'visible output'
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('answers DA1 from the model on the first chunk of a hidden-at-spawn PTY', async () => {
+      // End-to-end through a REAL runtime: spawn-marked → first chunk dropped
+      // → runtime emulator parses the query → reply written to the provider
+      // input path (the renderer never saw the bytes; main is the answerer).
+      const daemon = installObservableDaemonTestProvider()
+      const runtime = new OrcaRuntimeService({
+        getRepo: () => undefined,
+        getRepos: () => [],
+        addRepo: () => {},
+        updateRepo: () => undefined as never,
+        getAllWorktreeMeta: () => ({}),
+        getWorktreeMeta: () => undefined,
+        setWorktreeMeta: () => undefined as never,
+        removeWorktreeMeta: () => {},
+        getGitHubCache: () => ({ pr: {}, issue: {} }) as never,
+        getSettings: () => ({
+          workspaceDir: '/tmp/workspaces',
+          nestWorkspaces: false,
+          refreshLocalBaseRefOnWorktreeCreate: false,
+          branchPrefix: 'none',
+          branchPrefixCustom: '',
+          terminalMainSideEffectAuthority: true,
+          terminalHiddenDeliveryGate: true,
+          terminalModelQueryAuthority: true
+        })
+      } as never)
+
+      registerPtyHandlers(mainWindow as never, runtime as never)
+      const result = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        sessionId: 'daemon-session',
+        initiallyHidden: true
+      })) as { id: string }
+
+      daemon.emitData(result.id, '\x1b[c')
+      // Settle the per-PTY emulator writeChain (and the reply it forwards).
+      await runtime.serializeMainTerminalBuffer(result.id)
+
+      expect(daemon.write).toHaveBeenCalledWith(result.id, '\x1b[?1;2c')
     })
   })
 

@@ -3338,6 +3338,37 @@ describe('connectPanePty', () => {
       expect(bindingWithPredicate.isHiddenDeliveryGateManagedPty()).toBe(true)
     })
 
+    it('declares hidden-at-spawn on connect for hidden non-codex panes', async () => {
+      enableMainAuthority()
+      const deps = createDeps({ isVisibleRef: { current: false } })
+      const { transport } = await connectHiddenPane(deps)
+      // Why: waiting for the first dataCallback sync left a spawn-time query
+      // window where neither side replied (the non-codex DA1 loss). The flag
+      // lets main mark the PTY hidden before its first byte.
+      expect(transport.connect).toHaveBeenCalledWith(
+        expect.objectContaining({ initiallyHidden: true })
+      )
+    })
+
+    it('keeps visible spawns undeclared (visible spawn unchanged)', async () => {
+      enableMainAuthority()
+      const deps = createDeps()
+      const { transport } = await connectHiddenPane(deps)
+      expect(transport.connect.mock.calls[0]![0]).not.toHaveProperty('initiallyHidden')
+    })
+
+    it('never declares hidden-at-spawn while the codex startup window is active', async () => {
+      enableMainAuthority()
+      const deps = createDeps({
+        isVisibleRef: { current: false },
+        startup: { command: 'codex' }
+      })
+      const { transport } = await connectHiddenPane(deps)
+      // Codex startup probes need live renderer delivery for the 10s window;
+      // a spawn-time hidden mark would gate them (codex spawns keep delivery).
+      expect(transport.connect.mock.calls[0]![0]).not.toHaveProperty('initiallyHidden')
+    })
+
     it('does not gate or fact-reply when the hidden-delivery kill switch is off', async () => {
       enableMainAuthority()
       mockStoreState.settings = {

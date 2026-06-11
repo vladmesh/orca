@@ -908,6 +908,10 @@ export type PreloadApi = {
       // Preserved from the deleted index.d.ts PtyApi duplicate during the
       // single-source-of-truth collapse (see docs/preload-typecheck-hole.md §1).
       shellOverride?: string
+      // Why: hidden-at-spawn declaration — main marks the PTY hidden before
+      // its first byte so the delivery gate + model responder own spawn-time
+      // queries (terminal-query-authority.md §races).
+      initiallyHidden?: boolean
       // Why: closes the SIGKILL race documented in INVESTIGATION.md — main
       // sync-flushes the (worktreeId, tabId, leafId → ptyId) binding before
       // pty:spawn returns. Only the renderer's daemon-host path threads these.

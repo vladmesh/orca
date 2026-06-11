@@ -34,7 +34,7 @@ Remote-runtime PTYs (`remote:`) never transit local main; the renderer
 | OSC 133;D command-finished exit code | main | main | renderer |
 | GitHub PR-link scan | main | main | renderer |
 | Command Code output scrape | main (shipped: per-PTY detector beside the tracker → `command-code-working`/`command-code-done` facts; the renderer pane keeps the done settle timer — it must consult the live status row) | main (shipped) | renderer |
-| DECSET 2031 color-scheme reply | renderer view/watcher — query authority stays with the view (contract invariant 6) | same | renderer |
+| DECSET 2031 color-scheme reply | renderer view/watcher — the 2031 fact reply path is untouched by Phase 5; general query authority is now per-chunk structural ownership, see [`terminal-query-authority.md`](./terminal-query-authority.md) (contract invariant 6 as amended) | same | renderer |
 | DECSET 2004 paste readiness (`agent-paste-draft.ts`) | renderer — input pacing, not a model side effect | renderer | renderer |
 
 ## Main-Side Tracker

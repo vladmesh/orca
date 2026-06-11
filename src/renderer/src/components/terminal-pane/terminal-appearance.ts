@@ -16,6 +16,7 @@ import { getFitOverrideForPty } from '@/lib/pane-manager/mobile-fit-overrides'
 import type { PtyTransport } from './pty-transport'
 import type { EffectiveMacOptionAsAlt } from '@/lib/keyboard-layout/detect-option-as-alt'
 import { HEX_COLOR_RE } from '../../../../shared/color-validation'
+import type { TerminalViewAttributes } from '../../../../shared/terminal-view-attributes'
 import { publishTerminalViewAttributes } from './terminal-view-attributes-publisher'
 
 export { mode2031SequenceFor }
@@ -194,6 +195,28 @@ export function composeActiveTerminalTheme(
     }
   }
   return theme
+}
+
+/** App-start publication (terminal-query-authority.md §Phase 6
+ *  prerequisites): hidden-at-launch PTYs can query OSC 10/11 before any
+ *  terminal pane mounts, and main's responder is silent-until-first-push.
+ *  Composes the same theme applyTerminalAppearance would and publishes it
+ *  through the same deduped publisher, so the later pane-mount apply is a
+ *  no-op re-push. Returns whether a publish actually went out. */
+export function publishTerminalViewAttributesAtAppStart(
+  settings: GlobalSettings | null | undefined,
+  systemPrefersDark: boolean,
+  send?: (attributes: TerminalViewAttributes) => boolean
+): boolean {
+  if (!settings) {
+    return false
+  }
+  const appearance = resolveEffectiveTerminalAppearance(settings, systemPrefersDark)
+  const baseTheme: ITheme | null = appearance.theme ?? getBuiltinTheme(appearance.themeName)
+  const theme = composeActiveTerminalTheme(baseTheme, settings)
+  return send !== undefined
+    ? publishTerminalViewAttributes(theme, appearance.mode, settings, send)
+    : publishTerminalViewAttributes(theme, appearance.mode, settings)
 }
 
 // Value equality over composed ITheme objects (flat string slots plus the

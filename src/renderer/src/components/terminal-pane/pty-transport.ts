@@ -562,6 +562,10 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
           command,
           ...(connectionId ? { connectionId } : {}),
           ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+          // Why: hidden-at-spawn mark must land in main before the PTY's
+          // first byte, so it rides the spawn IPC instead of the pane's
+          // first visibility sync (terminal-query-authority.md).
+          ...(options.initiallyHidden ? { initiallyHidden: true } : {}),
           worktreeId,
           ...(tabId ? { tabId } : {}),
           ...(leafId ? { leafId } : {}),

@@ -157,6 +157,20 @@ export class HeadlessEmulator {
     this.viewAttributeResponder?.clearColorOverrides()
   }
 
+  /** Re-seed parity for snapshot `modes.kittyKeyboardFlags`
+   *  (terminal-query-authority.md §kitty): replays the persisted flags
+   *  through the same `CSI = flags ; 1 u` parse a live push uses, so hidden
+   *  `CSI ? u` reports them instead of `?0u`. Routed as an UNFLAGGED write —
+   *  outside any forwarding window, it can never answer anything — and never
+   *  into renderer rehydrateSequences (POST_REPLAY_REATTACH_RESET's kitty
+   *  reset stays authoritative). */
+  applyKittyKeyboardFlags(flags: number): Promise<void> {
+    if (!Number.isInteger(flags) || flags <= 0) {
+      return Promise.resolve()
+    }
+    return this.write(`\x1b[=${flags};1u`)
+  }
+
   private emitQueryReply(reply: string): void {
     if (this.queryReplyForwardingDepth > 0 && this.onQueryReply) {
       this.onQueryReply(reply)

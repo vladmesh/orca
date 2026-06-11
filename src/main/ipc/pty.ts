@@ -2215,6 +2215,12 @@ export function registerPtyHandlers(
         worktreeId?: string
         sessionId?: string
         shellOverride?: string
+        // Why: hidden-at-spawn declaration (terminal-query-authority.md
+        // §races) — the renderer knows at spawn time that no visible view
+        // will consume this PTY's bytes, so main marks it hidden BEFORE the
+        // first byte and the gate + model responder own spawn-time queries.
+        // The renderer never sets this while the codex startup window runs.
+        initiallyHidden?: boolean
         // Why: closes the SIGKILL race documented in INVESTIGATION.md by
         // letting main patch + sync-flush the (worktreeId, tabId, leafId →
         // ptyId) binding before pty:spawn returns. Only the renderer's
@@ -2497,6 +2503,20 @@ export function registerPtyHandlers(
           ? (getSettings()?.terminalWindowsPowerShellImplementation ?? 'auto')
           : undefined
       }
+      const initiallyHidden = args.initiallyHidden === true
+      // Why pre-spawn for daemon-host sessions (id minted up front): daemon
+      // PTYs can emit prompt bytes before spawn() resolves, and the hidden
+      // mark must beat the first byte so the gate + model responder own
+      // spawn-time queries (terminal-query-authority.md §races). Other
+      // providers cannot emit until spawn resolves; the post-spawn mark
+      // below is byte-zero-safe for them.
+      const preSpawnHiddenMarkId =
+        initiallyHidden && isDaemonHostSpawn && effectiveSessionAppId !== undefined
+          ? effectiveSessionAppId
+          : null
+      if (preSpawnHiddenMarkId !== null) {
+        markHiddenRendererPty(preSpawnHiddenMarkId)
+      }
       let result: PtySpawnResult
       try {
         if (preAllocatedHandle) {
@@ -2504,6 +2524,11 @@ export function registerPtyHandlers(
         }
         result = await provider.spawn(spawnOptions)
       } catch (err) {
+        // Why: a failed spawn must not leave a stale hidden mark on a session
+        // id a later visible attach may reuse.
+        if (preSpawnHiddenMarkId !== null) {
+          unmarkHiddenRendererPty(preSpawnHiddenMarkId)
+        }
         const rawMessage = err instanceof Error ? err.message : String(err)
         const spawnError = normalizeNodePtySpawnError(err)
         if (effectiveSessionAppId !== undefined) {
@@ -2561,6 +2586,18 @@ export function registerPtyHandlers(
         }
       }
       ptyOwnership.set(result.id, args.connectionId ?? null)
+      if (initiallyHidden) {
+        // Why marked synchronously before any await below: local/SSH provider
+        // data events dispatch on later tasks, so this is still ahead of the
+        // first byte's delivery decision. Idempotent for daemon hosts already
+        // marked pre-spawn; the renderer's first visibility sync re-marks or
+        // unmarks (emitting the restore marker) through the Phase-4 path.
+        markHiddenRendererPty(result.id)
+        if (preSpawnHiddenMarkId !== null && preSpawnHiddenMarkId !== result.id) {
+          // Defense: never strand a mark on an id the provider renamed.
+          unmarkHiddenRendererPty(preSpawnHiddenMarkId)
+        }
+      }
       // Why: Phase-5 ConPTY DA1 — record the native-Windows-local-PTY
       // determination from the spawn record before the headless seed below,
       // so the runtime emulator's DA1 override exists from byte zero.
@@ -2664,7 +2701,18 @@ export function registerPtyHandlers(
             ? { cols: result.snapshotCols, rows: result.snapshotRows }
             : undefined
         if (typeof result.snapshot === 'string' && result.snapshot.length > 0) {
-          runtime.seedHeadlessTerminal(result.id, result.snapshot, seedSize)
+          // Why kitty flags ride seed metadata: the snapshot string omits
+          // them by design (renderer kitty reset stays authoritative), but
+          // the re-seeded emulator must answer hidden `CSI ? u` with the
+          // flags the still-running app pushed (terminal-query-authority.md).
+          runtime.seedHeadlessTerminal(
+            result.id,
+            result.snapshot,
+            seedSize,
+            typeof result.snapshotKittyKeyboardFlags === 'number'
+              ? { kittyKeyboardFlags: result.snapshotKittyKeyboardFlags }
+              : {}
+          )
         } else if (
           result.coldRestore &&
           typeof result.coldRestore.scrollback === 'string' &&

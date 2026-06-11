@@ -650,6 +650,10 @@ const api = {
       worktreeId?: string
       sessionId?: string
       shellOverride?: string
+      // Why: hidden-at-spawn declaration — main marks the PTY hidden before
+      // its first byte so the delivery gate + model responder own spawn-time
+      // queries (terminal-query-authority.md §races).
+      initiallyHidden?: boolean
       // Why: closes the SIGKILL race documented in INVESTIGATION.md by
       // letting main patch + sync-flush the (worktreeId, tabId, leafId →
       // ptyId) binding before pty:spawn returns. Only the renderer's

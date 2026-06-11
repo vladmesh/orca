@@ -772,6 +772,10 @@ type RuntimeHeadlessTerminal = {
 
 type HeadlessSeedMetadata = {
   cwd?: string | null
+  /** Persisted kitty flags from the daemon snapshot, re-applied to the fresh
+   *  emulator so hidden `CSI ? u` answers the real flags instead of ?0u
+   *  (terminal-query-authority.md §kitty). */
+  kittyKeyboardFlags?: number
 }
 
 type RuntimePtyController = {
@@ -4083,6 +4087,13 @@ export class OrcaRuntimeService {
         // Why: seed writes never set forwardQueryReplies — the main-side
         // replay guard. A snapshot containing old queries must answer no one.
         await state.emulator.write(data)
+        // Why AFTER the seed write: the snapshot payload cannot carry kitty
+        // pushes (rehydrateSequences deliberately omits them), but ordering
+        // behind it keeps the parse deterministic. Unflagged like the seed —
+        // re-applying flags must answer no one.
+        if (typeof metadata.kittyKeyboardFlags === 'number') {
+          await state.emulator.applyKittyKeyboardFlags(metadata.kittyKeyboardFlags)
+        }
         if (metadata.cwd !== undefined) {
           state.emulator.setCwd(metadata.cwd)
         }
@@ -4245,6 +4256,11 @@ export class OrcaRuntimeService {
         // disposeHeadlessTerminal, and daemon respawns reuse session ids — a
         // stale link's reply must never reach a successor PTY under this id.
         if (state !== null && this.headlessTerminals.get(ptyId) === state) {
+          // Why this write is safe pre-shell-ready: daemon Session.write
+          // QUEUES (never drops) input while the POSIX shell-ready gate is
+          // pending and flushes at the ready marker or the 15s
+          // SHELL_READY_TIMEOUT_MS bound (session.ts) — a spawn-time query
+          // reply is delayed at most that bound, not lost.
           this.ptyController?.write(ptyId, reply)
         }
       }

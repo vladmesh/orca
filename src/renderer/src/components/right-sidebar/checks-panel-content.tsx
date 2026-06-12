@@ -1232,7 +1232,7 @@ export function ChecksList({
         <div className="flex items-center justify-center py-8 text-[11px] text-muted-foreground">
           {translate(
             'auto.components.right.sidebar.checks.panel.content.991f50c7e4',
-            'No checks configured'
+            'No checks reported yet'
           )}
         </div>
       ) : !checksExpanded ? null : (

@@ -90,6 +90,10 @@ import {
 } from './pr-comment-thread-resolution'
 import { installWindowVisibilityTimeoutPoller } from '@/lib/window-visibility-timeout-poller'
 import {
+  CHECKS_PANEL_BASE_POLL_INTERVAL_MS,
+  nextChecksPanelPollInterval
+} from './checks-panel-polling'
+import {
   getChecksPanelEmptyStateCopy,
   shouldShowChecksPanelPublishBranchAction
 } from './checks-panel-empty-state'
@@ -449,7 +453,7 @@ export default function ChecksPanel(): React.JSX.Element {
   const [titleSaving, setTitleSaving] = useState(false)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const titleInputFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pollIntervalRef = useRef(30_000) // start at 30s, backs off to 120s
+  const pollIntervalRef = useRef(CHECKS_PANEL_BASE_POLL_INTERVAL_MS)
   const mountedRef = useMountedRef()
   const confirm = useConfirmationDialog()
   const prevChecksRef = useRef<string>('')
@@ -584,7 +588,7 @@ export default function ChecksPanel(): React.JSX.Element {
     setHostedReviewCreationSnapshot(null)
     setGitStatusSnapshot(null)
     setGitStatusRefreshNonce((value) => value + 1)
-    pollIntervalRef.current = 30_000
+    pollIntervalRef.current = CHECKS_PANEL_BASE_POLL_INTERVAL_MS
     prevChecksRef.current = ''
     conflictSummaryRefreshKeyRef.current = null
     refreshRequestKeyRef.current = null
@@ -1362,14 +1366,13 @@ export default function ChecksPanel(): React.JSX.Element {
         }
         setChecks(result)
 
-        // Exponential backoff: if checks haven't changed, double the interval (cap 120s).
-        // If they changed, reset to 30s.
-        const signature = JSON.stringify(result.map((c) => `${c.name}:${c.status}:${c.conclusion}`))
-        pollIntervalRef.current =
-          signature === prevChecksRef.current
-            ? Math.min(pollIntervalRef.current * 2, 120_000)
-            : 30_000
-        prevChecksRef.current = signature
+        const poll = nextChecksPanelPollInterval({
+          checks: result,
+          previousSignature: prevChecksRef.current,
+          currentIntervalMs: pollIntervalRef.current
+        })
+        pollIntervalRef.current = poll.intervalMs
+        prevChecksRef.current = poll.signature
       } catch (err) {
         if (
           !isCurrentAsyncResult(
@@ -1442,12 +1445,13 @@ export default function ChecksPanel(): React.JSX.Element {
         const result = gitLabPipelineJobsToPRChecks(details?.pipelineJobs ?? [])
         setChecks(result)
         setComments(gitLabMRCommentsToPRComments(details?.comments))
-        const signature = JSON.stringify(result.map((c) => `${c.name}:${c.status}:${c.conclusion}`))
-        pollIntervalRef.current =
-          signature === prevChecksRef.current
-            ? Math.min(pollIntervalRef.current * 2, 120_000)
-            : 30_000
-        prevChecksRef.current = signature
+        const poll = nextChecksPanelPollInterval({
+          checks: result,
+          previousSignature: prevChecksRef.current,
+          currentIntervalMs: pollIntervalRef.current
+        })
+        pollIntervalRef.current = poll.intervalMs
+        prevChecksRef.current = poll.signature
       } catch (err) {
         if (!isCurrentAsyncResult(requestKey)) {
           return
@@ -1484,7 +1488,7 @@ export default function ChecksPanel(): React.JSX.Element {
     }
 
     // Reset backoff state on PR change
-    pollIntervalRef.current = 30_000
+    pollIntervalRef.current = CHECKS_PANEL_BASE_POLL_INTERVAL_MS
     prevChecksRef.current = ''
     // Why: PR check status is user-visible when the panel is open. Keep visible
     // unfocused windows fresh, but stop timers and API work while hidden.
@@ -1499,7 +1503,7 @@ export default function ChecksPanel(): React.JSX.Element {
       return
     }
 
-    pollIntervalRef.current = 30_000
+    pollIntervalRef.current = CHECKS_PANEL_BASE_POLL_INTERVAL_MS
     prevChecksRef.current = ''
     return installWindowVisibilityTimeoutPoller({
       run: () => fetchGitLabDetails(),
@@ -1751,14 +1755,13 @@ export default function ChecksPanel(): React.JSX.Element {
               return
             }
             setChecks(result)
-            const signature = JSON.stringify(
-              result.map((c) => `${c.name}:${c.status}:${c.conclusion}`)
-            )
-            pollIntervalRef.current =
-              signature === prevChecksRef.current
-                ? Math.min(pollIntervalRef.current * 2, 120_000)
-                : 30_000
-            prevChecksRef.current = signature
+            const poll = nextChecksPanelPollInterval({
+              checks: result,
+              previousSignature: prevChecksRef.current,
+              currentIntervalMs: pollIntervalRef.current
+            })
+            pollIntervalRef.current = poll.intervalMs
+            prevChecksRef.current = poll.signature
           },
           (err) => {
             if (!isCurrentRequest() || !isCurrentAsyncResult(prRequestKey)) {
@@ -1836,9 +1839,8 @@ export default function ChecksPanel(): React.JSX.Element {
         return
       }
       // Why: entering the Checks tab is automatic UI behavior, not an explicit
-      // user refresh. Route PR refresh through the coordinator so rate-limit
-      // guards still apply; only force detail panes that the entry freshness rule
-      // already proved stale, so tab entry stays fresh without broad fan-out.
+      // user refresh. Keep check loads cacheable so the GitHub CLI cache can
+      // absorb visible polling; only the manual refresh button bypasses it.
       if (isGitLabReviewContext) {
         void fetchHostedReviewForBranch(repo.path, branch, {
           force: true,
@@ -1854,7 +1856,7 @@ export default function ChecksPanel(): React.JSX.Element {
       }
       enqueueGitHubPRRefresh(activeWorktreeId, 'active', 80)
       if (options.refreshChecks) {
-        void fetchChecks({ force: true })
+        void fetchChecks()
       }
       if (options.refreshComments) {
         void fetchComments({ force: true })
@@ -1920,7 +1922,7 @@ export default function ChecksPanel(): React.JSX.Element {
 
     // Reset polling attention state so the forced fetch's signature establishes
     // a fresh baseline rather than colliding with the previous PR's backoff.
-    pollIntervalRef.current = 30_000
+    pollIntervalRef.current = CHECKS_PANEL_BASE_POLL_INTERVAL_MS
     prevChecksRef.current = ''
     handleEntryRefresh({ refreshChecks, refreshComments })
   }, [entryKey, prFetchedAt, checksFetchedAt, commentsFetchedAt, prNumber, handleEntryRefresh])
@@ -3300,7 +3302,7 @@ export default function ChecksPanel(): React.JSX.Element {
         </>
       )}
       {/* Why: when the hosted review has merge conflicts and no checks have been fetched,
-          showing "No checks configured" is misleading — checks may exist but
+          showing an empty checks state is misleading — checks may exist but
           simply cannot run until conflicts are resolved. Hide the empty state. */}
       {!(activeConflictReview && checks.length === 0 && !checksLoading) && (
         <ChecksList

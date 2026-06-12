@@ -2571,6 +2571,9 @@ export function useIpcEvents(): void {
       const statusPayload = data.orchestration
         ? { ...resolvedPayload, orchestration: data.orchestration }
         : resolvedPayload
+      const statusPayloadWithTurnBoundary = data.promptInteractionKey
+        ? { ...statusPayload, promptInteractionKey: data.promptInteractionKey }
+        : statusPayload
       const existingStatus = store.agentStatusByPaneKey[data.paneKey]
       const identity = resolveAgentStatusIdentity({
         existing: existingStatus
@@ -2598,7 +2601,7 @@ export function useIpcEvents(): void {
       const statusWorktreeId = data.worktreeId ?? owningWorktreeId
       store.setAgentStatus(
         data.paneKey,
-        statusPayload,
+        statusPayloadWithTurnBoundary,
         terminalTitle,
         {
           updatedAt: data.receivedAt,

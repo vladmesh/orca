@@ -43,7 +43,7 @@ Done means: if Machine A and Machine B have different provider accounts, every l
 
 ## 3. Tasks UI
 
-- [~] Add an explicit source-context picker or display for Tasks that can represent host, provider account, and project/source.
+- [x] Add an explicit source-context picker or display for Tasks that can represent host, provider account, and project/source.
 - [~] Decide and implement the default Tasks view when a logical project exists on multiple hosts.
 - [~] Support switching the task source without changing the current run host.
 - [~] Show enough account/host metadata to make mismatched GitHub/GitLab/Linear/Jira accounts understandable.

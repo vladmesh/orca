@@ -2,6 +2,12 @@ import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../../shared
 import { getProjectIdentityKey } from '../../../shared/project-host-setup-projection'
 import type { Repo } from '../../../shared/types'
 
+export type TaskProjectPickerGroup = {
+  projectKey: string
+  repo: Repo
+  sources: Repo[]
+}
+
 export function getDefaultTaskRepoSelection(repos: readonly Repo[]): Set<string> {
   const selectedByProject = new Map<string, Repo>()
   for (const repo of repos) {
@@ -18,15 +24,30 @@ export function getTaskProjectPickerRepos(
   repos: readonly Repo[],
   preferredSelection: ReadonlySet<string> = new Set()
 ): Repo[] {
-  const selectedByProject = new Map<string, Repo>()
+  return getTaskProjectPickerGroups(repos, preferredSelection).map((group) => group.repo)
+}
+
+export function getTaskProjectPickerGroups(
+  repos: readonly Repo[],
+  preferredSelection: ReadonlySet<string> = new Set()
+): TaskProjectPickerGroup[] {
+  const groupsByProject = new Map<string, TaskProjectPickerGroup>()
   for (const repo of repos) {
     const projectKey = getTaskRepoProjectKey(repo)
-    const current = selectedByProject.get(projectKey)
-    if (!current || compareTaskProjectPickerCandidate(repo, current, preferredSelection) < 0) {
-      selectedByProject.set(projectKey, repo)
+    const current = groupsByProject.get(projectKey)
+    if (!current) {
+      groupsByProject.set(projectKey, { projectKey, repo, sources: [repo] })
+      continue
+    }
+    current.sources.push(repo)
+    if (compareTaskProjectPickerCandidate(repo, current.repo, preferredSelection) < 0) {
+      current.repo = repo
     }
   }
-  return [...selectedByProject.values()]
+  return [...groupsByProject.values()].map((group) => ({
+    ...group,
+    sources: [...group.sources].sort(compareDefaultTaskRepoCandidate)
+  }))
 }
 
 export function normalizeTaskRepoSelection(

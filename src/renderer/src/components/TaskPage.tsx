@@ -85,7 +85,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import RepoMultiCombobox from '@/components/ui/repo-multi-combobox'
+import TaskProjectSourceCombobox from '@/components/task-project-source-combobox'
 import { LinearApiKeyDialog } from '@/components/linear-api-key-dialog'
 import { LinearScopeSelector } from '@/components/linear-scope-selector'
 import RepoBadgeLabel from '@/components/repo/RepoBadgeLabel'
@@ -184,7 +184,7 @@ import { findTaskPageJiraIssue } from '@/components/task-page-jira-cache-selecto
 import { getRepoBackedTaskEmptyState } from '@/components/task-page-empty-state'
 import {
   getDefaultTaskRepoSelection,
-  getTaskProjectPickerRepos,
+  getTaskProjectPickerGroups,
   normalizeTaskRepoSelection
 } from '@/components/task-page-default-repo-selection'
 import {
@@ -2792,9 +2792,13 @@ export default function TaskPage(): React.JSX.Element {
   }, [eligibleRepos, pageData.preselectedRepoId, settings?.defaultRepoSelection])
 
   const [repoSelection, setRepoSelection] = useState<ReadonlySet<string>>(resolvedInitialSelection)
-  const taskPickerRepos = useMemo(
-    () => getTaskProjectPickerRepos(eligibleRepos, repoSelection),
+  const taskPickerGroups = useMemo(
+    () => getTaskProjectPickerGroups(eligibleRepos, repoSelection),
     [eligibleRepos, repoSelection]
+  )
+  const taskPickerRepos = useMemo(
+    () => taskPickerGroups.map((group) => group.repo),
+    [taskPickerGroups]
   )
 
   // Why: prune selection when a previously-selected repo is removed, and
@@ -7707,8 +7711,8 @@ export default function TaskPage(): React.JSX.Element {
                     {githubMode !== 'project' && (
                       <>
                         <div className="min-w-0 max-w-[220px] shrink-0">
-                          <RepoMultiCombobox
-                            repos={taskPickerRepos}
+                          <TaskProjectSourceCombobox
+                            groups={taskPickerGroups}
                             selected={repoSelection}
                             getRepoHostLabel={getTaskPickerRepoHostLabel}
                             onChange={(next) => {
@@ -8418,8 +8422,8 @@ export default function TaskPage(): React.JSX.Element {
                         })}
                       </div>
                       <div className="min-w-0 w-full sm:w-[200px]">
-                        <RepoMultiCombobox
-                          repos={taskPickerRepos}
+                        <TaskProjectSourceCombobox
+                          groups={taskPickerGroups}
                           selected={repoSelection}
                           getRepoHostLabel={getTaskPickerRepoHostLabel}
                           onChange={(next) => {

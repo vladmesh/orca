@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Repo } from '../../../shared/types'
 import {
   getDefaultTaskRepoSelection,
+  getTaskProjectPickerGroups,
   getTaskProjectPickerRepos,
   normalizeTaskRepoSelection
 } from './task-page-default-repo-selection'
@@ -160,6 +161,57 @@ describe('getTaskProjectPickerRepos', () => {
     ])
 
     expect(pickerRepos.map((candidate) => candidate.id)).toEqual(['local-claude-swap'])
+  })
+})
+
+describe('getTaskProjectPickerGroups', () => {
+  it('keeps all host sources under one logical project row', () => {
+    const groups = getTaskProjectPickerGroups([
+      repo({
+        id: 'local-orca',
+        upstream: { owner: 'stablyai', repo: 'orca' }
+      }),
+      repo({
+        id: 'ssh-orca',
+        connectionId: 'builder',
+        upstream: { owner: 'stablyai', repo: 'orca' }
+      }),
+      repo({
+        id: 'docs',
+        upstream: { owner: 'stablyai', repo: 'docs' }
+      })
+    ])
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0]).toMatchObject({
+      projectKey: 'github:stablyai/orca',
+      repo: { id: 'local-orca' }
+    })
+    expect(groups[0]?.sources.map((source) => source.id)).toEqual(['local-orca', 'ssh-orca'])
+    expect(groups[1]).toMatchObject({
+      projectKey: 'github:stablyai/docs',
+      repo: { id: 'docs' }
+    })
+  })
+
+  it('uses the explicitly selected source as the project representative', () => {
+    const groups = getTaskProjectPickerGroups(
+      [
+        repo({
+          id: 'local-orca',
+          upstream: { owner: 'stablyai', repo: 'orca' }
+        }),
+        repo({
+          id: 'ssh-orca',
+          connectionId: 'builder',
+          upstream: { owner: 'stablyai', repo: 'orca' }
+        })
+      ],
+      new Set(['ssh-orca'])
+    )
+
+    expect(groups[0]?.repo.id).toBe('ssh-orca')
+    expect(groups[0]?.sources.map((source) => source.id)).toEqual(['local-orca', 'ssh-orca'])
   })
 })
 

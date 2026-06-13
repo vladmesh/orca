@@ -28,28 +28,42 @@ const TASK_STATUSES: TaskStatus[] = [
   'blocked'
 ]
 
-const SendParams = z.object({
-  to: requiredString('Missing --to'),
-  subject: requiredString('Missing --subject'),
-  from: OptionalString,
-  body: OptionalString,
-  type: z
-    .enum([
-      'status',
-      'dispatch',
-      'worker_done',
-      'merge_ready',
-      'escalation',
-      'handoff',
-      'decision_gate',
-      'heartbeat'
-    ])
-    .optional(),
-  priority: z.enum(['normal', 'high', 'urgent']).optional(),
-  threadId: OptionalString,
-  payload: OptionalString,
-  devMode: OptionalBoolean
-})
+const WORKER_DONE_GROUP_RECIPIENT_ERROR =
+  'worker_done messages must be sent to a concrete coordinator terminal handle, not a group address.'
+
+const SendParams = z
+  .object({
+    to: requiredString('Missing --to'),
+    subject: requiredString('Missing --subject'),
+    from: OptionalString,
+    body: OptionalString,
+    type: z
+      .enum([
+        'status',
+        'dispatch',
+        'worker_done',
+        'merge_ready',
+        'escalation',
+        'handoff',
+        'decision_gate',
+        'heartbeat'
+      ])
+      .optional(),
+    priority: z.enum(['normal', 'high', 'urgent']).optional(),
+    threadId: OptionalString,
+    payload: OptionalString,
+    devMode: OptionalBoolean
+  })
+  .superRefine((params, ctx) => {
+    if (params.type !== 'worker_done' || !isGroupAddress(params.to)) {
+      return
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: WORKER_DONE_GROUP_RECIPIENT_ERROR,
+      path: ['to']
+    })
+  })
 
 const CheckParams = z.object({
   terminal: OptionalString,

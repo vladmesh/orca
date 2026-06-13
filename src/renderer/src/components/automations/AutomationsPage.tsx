@@ -36,6 +36,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import { getLocalPreflightContext, localPreflightContextKey } from '@/lib/local-preflight-context'
 import { cn } from '@/lib/utils'
 import RepoBadgeLabel from '@/components/repo/RepoBadgeLabel'
 import { getAgentCatalog } from '@/lib/agent-catalog'
@@ -51,6 +53,11 @@ import type {
   AutomationRun,
   AutomationUpdateInput
 } from '../../../../shared/automations-types'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
+import { TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
+import type { PreflightStatus } from '../../../../preload/api-types'
+import type { RuntimeStatus } from '../../../../shared/runtime-types'
+import type { TaskSourceContext } from '../../../../shared/task-source-context'
 import type { Worktree } from '../../../../shared/types'
 import { getWorktreePathBasenameFromId } from '../../../../shared/worktree-id'
 import {
@@ -91,6 +98,11 @@ import { getAutomationTemplates, type AutomationTemplate } from './automation-te
 import { getAutomationTargetAvailability } from './automation-target-availability'
 import { buildAutomationRunContextForRepo } from './automation-run-context'
 import {
+  getRepoBackedProviderAvailability,
+  type RuntimeProviderPreflightStatus
+} from '../task-source-provider-availability'
+import type { TaskSourceHostAvailability } from '../task-source-context-summary'
+import {
   getExternalAutomationActionDisabledMessage,
   getExternalAutomationSourceAvailability,
   isSshConnectionBusy
@@ -105,6 +117,7 @@ const AGENTS = getAgentCatalog().map((agent) => agent.id)
 const DEFAULT_TIME = '09:00'
 const AUTOMATIONS_CHANGED_EVENT = 'orca:automations-changed'
 type AutomationPaneTab = 'overview' | 'runs'
+type RepoBackedAutomationSourceContext = TaskSourceContext & { provider: 'github' | 'gitlab' }
 
 type ExternalAutomationListEntry =
   | {
@@ -131,6 +144,46 @@ function getDefaultWorktree(worktrees: readonly Worktree[]): Worktree | null {
 
 function getAutomationRunRepoId(automation: Automation): string {
   return automation.runContext?.repoId ?? automation.projectId
+}
+
+function getRepoBackedAutomationSourceContext(
+  automation: Automation
+): RepoBackedAutomationSourceContext | null {
+  const context = automation.sourceContext
+  return context?.provider === 'github' || context?.provider === 'gitlab'
+    ? (context as RepoBackedAutomationSourceContext)
+    : null
+}
+
+function getRuntimeSourceHostAvailability(
+  context: TaskSourceContext,
+  runtimeStatusByEnvironmentId: ReadonlyMap<
+    string,
+    { status: RuntimeStatus | null; checkedAt: number }
+  >
+): TaskSourceHostAvailability | null {
+  const parsed = parseExecutionHostId(context.hostId)
+  if (parsed?.kind !== 'runtime') {
+    return null
+  }
+  const entry = runtimeStatusByEnvironmentId.get(parsed.environmentId)
+  if (!entry) {
+    return { hostId: context.hostId, reason: 'checking-task-source-capability' }
+  }
+  if (!entry.status) {
+    return { hostId: context.hostId, health: 'disconnected' }
+  }
+  if (entry.status.graphStatus !== 'ready') {
+    return { hostId: context.hostId, health: 'connecting' }
+  }
+  const capabilities = entry.status.capabilities
+  if (!capabilities) {
+    return { hostId: context.hostId, reason: 'checking-task-source-capability' }
+  }
+  if (!capabilities.includes(TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY)) {
+    return { hostId: context.hostId, reason: 'missing-task-source-capability' }
+  }
+  return null
 }
 
 function formatTimeInput(hour: number, minute: number): string {
@@ -278,6 +331,13 @@ export default function AutomationsPage(): React.JSX.Element {
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
   const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
   const settings = useAppStore((s) => s.settings)
+  const preflightStatus = useAppStore((s) => s.preflightStatus)
+  const preflightStatusChecked = useAppStore((s) => s.preflightStatusChecked)
+  const preflightStatusContextKey = useAppStore((s) => s.preflightStatusContextKey)
+  const refreshPreflightStatus = useAppStore((s) => s.refreshPreflightStatus)
+  const expectedPreflightContextKey = useAppStore((s) =>
+    localPreflightContextKey(getLocalPreflightContext(s))
+  )
   const selectedId = useAppStore((s) => s.selectedAutomationId)
   const setSelectedId = useAppStore((s) => s.setSelectedAutomationId)
   const repoMap = useRepoMap()
@@ -314,6 +374,11 @@ export default function AutomationsPage(): React.JSX.Element {
   const [selectedExternalKey, setSelectedExternalKey] = useState<string | null>(null)
   const [selectedExternalRunPage, setSelectedExternalRunPage] =
     useState<SelectedExternalRunPage | null>(null)
+  const runtimePreflightMountedRef = useRef(true)
+  const runtimePreflightRequestedHostIdsRef = useRef<Set<TaskSourceContext['hostId']>>(new Set())
+  const [runtimePreflightStatusByHostId, setRuntimePreflightStatusByHostId] = useState<
+    ReadonlyMap<TaskSourceContext['hostId'], RuntimeProviderPreflightStatus>
+  >(() => new Map())
   const selectAutomationId = useCallback(
     (automationId: string | null): void => {
       setSelectedAutomationRunPageId(null)
@@ -490,6 +555,128 @@ export default function AutomationsPage(): React.JSX.Element {
     canRerunAutomationRun({ automation: selected, run: selectedAutomationRunPage })
   const isSelectedAutomationRunPageRerunPending =
     selectedAutomationRunPage !== null && rerunRunIdsInFlight.has(selectedAutomationRunPage.id)
+  const preflightStatusCurrent = preflightStatusContextKey === expectedPreflightContextKey
+  const repoBackedAutomationSourceContexts = useMemo(
+    () =>
+      automations
+        .map((automation) => getRepoBackedAutomationSourceContext(automation))
+        .filter((context): context is RepoBackedAutomationSourceContext => context !== null),
+    [automations]
+  )
+  const runtimeAutomationSourceHostIds = useMemo(() => {
+    const hostIds = new Set<TaskSourceContext['hostId']>()
+    for (const context of repoBackedAutomationSourceContexts) {
+      const parsed = parseExecutionHostId(context.hostId)
+      if (parsed?.kind !== 'runtime') {
+        continue
+      }
+      const hostAvailability = getRuntimeSourceHostAvailability(
+        context,
+        runtimeStatusByEnvironmentId
+      )
+      if (hostAvailability) {
+        continue
+      }
+      hostIds.add(parsed.id)
+    }
+    return [...hostIds].sort()
+  }, [repoBackedAutomationSourceContexts, runtimeStatusByEnvironmentId])
+  useEffect(
+    () => () => {
+      runtimePreflightMountedRef.current = false
+    },
+    []
+  )
+  useEffect(() => {
+    if (!preflightStatusCurrent || !preflightStatusChecked) {
+      void refreshPreflightStatus()
+    }
+  }, [preflightStatusChecked, preflightStatusCurrent, refreshPreflightStatus])
+  useEffect(() => {
+    const unrequestedHostIds = runtimeAutomationSourceHostIds.filter(
+      (hostId) => !runtimePreflightRequestedHostIdsRef.current.has(hostId)
+    )
+    if (unrequestedHostIds.length === 0) {
+      return
+    }
+    setRuntimePreflightStatusByHostId((current) => {
+      const next = new Map(current)
+      for (const hostId of unrequestedHostIds) {
+        next.set(hostId, { checked: false, status: null })
+      }
+      return next
+    })
+    for (const hostId of unrequestedHostIds) {
+      runtimePreflightRequestedHostIdsRef.current.add(hostId)
+      const parsed = parseExecutionHostId(hostId)
+      if (parsed?.kind !== 'runtime') {
+        continue
+      }
+      // Why: automation sources can be owned by a different remote server than
+      // the run target; provider auth/tooling must be checked on the source host.
+      void callRuntimeRpc<PreflightStatus>(
+        { kind: 'environment', environmentId: parsed.environmentId },
+        'preflight.check',
+        undefined,
+        { timeoutMs: 15_000 }
+      )
+        .then((status) => {
+          if (!runtimePreflightMountedRef.current) {
+            return
+          }
+          setRuntimePreflightStatusByHostId((current) => {
+            const next = new Map(current)
+            next.set(hostId, { checked: true, status })
+            return next
+          })
+        })
+        .catch(() => {
+          if (!runtimePreflightMountedRef.current) {
+            return
+          }
+          setRuntimePreflightStatusByHostId((current) => {
+            const next = new Map(current)
+            next.set(hostId, { checked: true, status: null })
+            return next
+          })
+        })
+    }
+  }, [runtimeAutomationSourceHostIds])
+  const automationSourceHostAvailabilityById = useMemo(() => {
+    const availabilityById = new Map<string, TaskSourceHostAvailability[]>()
+    for (const automation of automations) {
+      const context = getRepoBackedAutomationSourceContext(automation)
+      if (!context) {
+        continue
+      }
+      const hostAvailability = getRuntimeSourceHostAvailability(
+        context,
+        runtimeStatusByEnvironmentId
+      )
+      const providerAvailability = getRepoBackedProviderAvailability({
+        provider: context.provider,
+        contexts: [context],
+        preflightStatus,
+        preflightReady: preflightStatusCurrent && preflightStatusChecked,
+        runtimePreflightStatusByHostId
+      })
+      const availability = [
+        ...(hostAvailability ? [hostAvailability] : []),
+        ...providerAvailability
+      ]
+      if (availability.length > 0) {
+        availabilityById.set(automation.id, availability)
+      }
+    }
+    return availabilityById
+  }, [
+    automations,
+    preflightStatus,
+    preflightStatusChecked,
+    preflightStatusCurrent,
+    runtimePreflightStatusByHostId,
+    runtimeStatusByEnvironmentId
+  ])
   const selectedRepo = selected ? (repoMap.get(getAutomationRunRepoId(selected)) ?? null) : null
   const selectedWorktree =
     selected && selected.workspaceId ? (worktreeMap.get(selected.workspaceId) ?? null) : null
@@ -500,7 +687,8 @@ export default function AutomationsPage(): React.JSX.Element {
         workspace: selectedWorktree,
         projectHostSetups,
         sshConnectionStates,
-        runtimeStatusByEnvironmentId
+        runtimeStatusByEnvironmentId,
+        sourceHostAvailability: automationSourceHostAvailabilityById.get(selected.id)
       })
     : null
   const canSaveDraft =
@@ -1253,7 +1441,8 @@ export default function AutomationsPage(): React.JSX.Element {
       workspace,
       projectHostSetups,
       sshConnectionStates,
-      runtimeStatusByEnvironmentId
+      runtimeStatusByEnvironmentId,
+      sourceHostAvailability: automationSourceHostAvailabilityById.get(automation.id)
     })
     if (!availability.canRunNow) {
       toast.error(availability.message)
@@ -1837,7 +2026,8 @@ export default function AutomationsPage(): React.JSX.Element {
                 workspace: automationWorktree,
                 projectHostSetups,
                 sshConnectionStates,
-                runtimeStatusByEnvironmentId
+                runtimeStatusByEnvironmentId,
+                sourceHostAvailability: automationSourceHostAvailabilityById.get(automation.id)
               })
               const workspaceLabel =
                 automation.workspaceMode === 'new_per_run'

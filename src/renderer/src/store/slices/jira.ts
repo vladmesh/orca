@@ -65,6 +65,7 @@ type InflightJiraReadRequest<T> = {
 }
 
 type JiraReadOptions = { sourceContext?: TaskSourceContext | null }
+type JiraPatchOptions = { sourceContext?: TaskSourceContext | null }
 
 type JiraReadScope = {
   settings: AppState['settings'] | TaskSourceContext | null
@@ -177,7 +178,7 @@ export type JiraSlice = {
     limit?: number,
     options?: JiraReadOptions
   ) => Promise<JiraIssue[]>
-  patchJiraIssue: (issueKey: string, patch: Partial<JiraIssue>) => void
+  patchJiraIssue: (issueKey: string, patch: Partial<JiraIssue>, options?: JiraPatchOptions) => void
 }
 
 export const createJiraSlice: StateCreator<AppState, [], [], JiraSlice> = (set, get) => ({
@@ -603,12 +604,18 @@ export const createJiraSlice: StateCreator<AppState, [], [], JiraSlice> = (set, 
     return promise
   },
 
-  patchJiraIssue: (issueKey, patch) => {
+  patchJiraIssue: (issueKey, patch, options) => {
+    const sourceScope =
+      options?.sourceContext?.provider === 'jira'
+        ? getTaskSourceCacheScope(options.sourceContext)
+        : null
+    const canPatchCacheKey = (key: string): boolean =>
+      sourceScope === null || key.startsWith(`${sourceScope}::`)
     set((s) => {
       let changed = false
       const nextIssueCache = { ...s.jiraIssueCache }
       for (const [key, entry] of Object.entries(nextIssueCache)) {
-        if (entry?.data?.key !== issueKey) {
+        if (!canPatchCacheKey(key) || entry?.data?.key !== issueKey) {
           continue
         }
         nextIssueCache[key] = { ...entry, data: { ...entry.data, ...patch }, fetchedAt: 0 }
@@ -617,7 +624,7 @@ export const createJiraSlice: StateCreator<AppState, [], [], JiraSlice> = (set, 
       const nextSearchCache = { ...s.jiraSearchCache }
       for (const key of Object.keys(nextSearchCache)) {
         const entry = nextSearchCache[key]
-        if (!entry?.data) {
+        if (!canPatchCacheKey(key) || !entry?.data) {
           continue
         }
         const index = entry.data.findIndex((issue) => issue.key === issueKey)

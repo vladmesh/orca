@@ -234,12 +234,12 @@ export default function JiraIssueWorkspace({
       const latest = await jiraGetIssue(providerSettings, displayed.key, displayed.siteId)
       if (latest) {
         setFullIssue(latest)
-        patchJiraIssue(latest.key, latest)
+        patchJiraIssue(latest.key, latest, { sourceContext })
       }
     } catch {
       // Keep the visible issue snapshot if refresh fails.
     }
-  }, [displayed, patchJiraIssue, providerSettings])
+  }, [displayed, patchJiraIssue, providerSettings, sourceContext])
 
   const mutateIssue = useCallback(
     async (
@@ -255,7 +255,7 @@ export default function JiraIssueWorkspace({
       try {
         if (optimistic) {
           setFullIssue({ ...displayed, ...optimistic })
-          patchJiraIssue(displayed.key, optimistic)
+          patchJiraIssue(displayed.key, optimistic, { sourceContext })
         }
         const result = await jiraUpdateIssue(providerSettings, displayed.key, updates, siteId)
         if (!result.ok) {
@@ -264,7 +264,7 @@ export default function JiraIssueWorkspace({
         await refreshIssue()
       } catch (error) {
         setFullIssue(previous)
-        patchJiraIssue(previous.key, previous)
+        patchJiraIssue(previous.key, previous, { sourceContext })
         toast.error(
           error instanceof Error
             ? error.message
@@ -277,7 +277,7 @@ export default function JiraIssueWorkspace({
         setPendingField(null)
       }
     },
-    [displayed, patchJiraIssue, pendingField, refreshIssue, providerSettings, siteId]
+    [displayed, patchJiraIssue, pendingField, refreshIssue, providerSettings, siteId, sourceContext]
   )
 
   const handleSaveTitle = useCallback(() => {

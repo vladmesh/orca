@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { create } from 'zustand'
 import type { AppState } from '../types'
 import type { JiraConnectionStatus, JiraIssue, JiraViewer } from '../../../../shared/types'
-import type { TaskSourceContext } from '../../../../shared/task-source-context'
+import {
+  getTaskSourceCacheScope,
+  type TaskSourceContext
+} from '../../../../shared/task-source-context'
 import { credentialDecryptionMessage } from '../../../../shared/integration-credential-errors'
 import { createJiraSlice } from './jira'
 
@@ -148,6 +151,60 @@ describe('createJiraSlice runtime context', () => {
     expect(jiraListIssues).toHaveBeenCalledWith(sourceContext, 'assigned', 30, 'site-1')
     expect(Object.values(store.getState().jiraSearchCache)).toHaveLength(1)
     expect(store.getState().jiraSearchCache['site-1::list::assigned::30']).toBeUndefined()
+  })
+
+  it('scopes optimistic issue patches to the selected Jira source context', () => {
+    const store = createTestStore()
+    const localSource = jiraSourceContext('local-runtime')
+    const remoteSource = jiraSourceContext('remote-runtime')
+    const localScope = getTaskSourceCacheScope(localSource)
+    const remoteScope = getTaskSourceCacheScope(remoteSource)
+
+    store.setState({
+      jiraIssueCache: {
+        [`${localScope}::site-1::ALP-1`]: {
+          data: { ...issue('ALP-1'), title: 'Local title' },
+          fetchedAt: Date.now()
+        },
+        [`${remoteScope}::site-1::ALP-1`]: {
+          data: { ...issue('ALP-1'), title: 'Remote title' },
+          fetchedAt: Date.now()
+        }
+      },
+      jiraSearchCache: {
+        [`${localScope}::site-1::list::assigned::30`]: {
+          data: [{ ...issue('ALP-1'), title: 'Local title' }],
+          fetchedAt: Date.now()
+        },
+        [`${remoteScope}::site-1::list::assigned::30`]: {
+          data: [{ ...issue('ALP-1'), title: 'Remote title' }],
+          fetchedAt: Date.now()
+        }
+      }
+    })
+
+    store.getState().patchJiraIssue(
+      'ALP-1',
+      { title: 'Patched local title' },
+      {
+        sourceContext: localSource
+      }
+    )
+
+    expect(store.getState().jiraIssueCache[`${localScope}::site-1::ALP-1`]?.data?.title).toBe(
+      'Patched local title'
+    )
+    expect(store.getState().jiraIssueCache[`${remoteScope}::site-1::ALP-1`]?.data?.title).toBe(
+      'Remote title'
+    )
+    expect(
+      store.getState().jiraSearchCache[`${localScope}::site-1::list::assigned::30`]?.data?.[0]
+        ?.title
+    ).toBe('Patched local title')
+    expect(
+      store.getState().jiraSearchCache[`${remoteScope}::site-1::list::assigned::30`]?.data?.[0]
+        ?.title
+    ).toBe('Remote title')
   })
 
   it('returns a failed Jira connect result when the active runtime changes before completion', async () => {

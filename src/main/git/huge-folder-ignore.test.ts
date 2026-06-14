@@ -83,4 +83,12 @@ describe('appendFolderToGitignore', () => {
     const wrote = await appendFolderToGitignore(dir, 'node_modules')
     expect(wrote).toBe(false)
   })
+
+  it('rejects folder names outside the known allowlist (injection guard)', async () => {
+    await expect(appendFolderToGitignore(dir, 'node_modules\n/etc/passwd')).rejects.toThrow(
+      /Refusing to add/
+    )
+    await expect(appendFolderToGitignore(dir, '../escape')).rejects.toThrow(/Refusing to add/)
+    await expect(appendFolderToGitignore(dir, 'arbitrary')).rejects.toThrow(/Refusing to add/)
+  })
 })

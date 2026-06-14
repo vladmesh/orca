@@ -17,6 +17,7 @@ import {
   type ExecFileOptions,
   type SpawnOptions
 } from 'child_process'
+import { StringDecoder } from 'string_decoder'
 import { withGitSpan } from '../observability/instrumentation'
 import { getDefaultWslDistro, parseWslPath, toWindowsWslPath, type WslPathInfo } from '../wsl'
 import { getSpawnArgsForWindows, isWindowsBatchScript, resolveWindowsCommand } from '../win32-utils'
@@ -652,12 +653,20 @@ export async function gitStreamStdout(
       let stdoutBytes = 0
       let stderr = ''
       let stderrBytes = 0
+      // Why: decode statefully so a multibyte UTF-8 character split across two
+      // chunks (common with non-ASCII filenames) isn't corrupted into
+      // replacement characters and mis-parsed.
+      const stdoutDecoder = new StringDecoder('utf8')
+      const stderrDecoder = new StringDecoder('utf8')
 
       const cleanup = (): void => {
         child.stdout?.off('data', onStdoutData)
         child.stderr?.off('data', onStderrData)
         child.off('error', onError)
         child.off('close', onClose)
+        // Flush any bytes the decoders were holding for an incomplete sequence.
+        stdoutDecoder.end()
+        stderrDecoder.end()
       }
       const finish = (error: Error | null): void => {
         if (settled) {
@@ -679,7 +688,22 @@ export async function gitStreamStdout(
           finish(new Error('git stdout exceeded maxBuffer.'))
           return
         }
-        if (options.onStdout(chunk.toString('utf-8')) === true) {
+        const decoded = stdoutDecoder.write(chunk)
+        if (decoded.length === 0) {
+          return
+        }
+        // Why: the parser callback is caller-supplied; a throw here would escape
+        // the stream event handler and crash the main process (the exact failure
+        // mode this streaming path exists to prevent). Convert it to a rejection.
+        let shouldStop: boolean | void
+        try {
+          shouldStop = options.onStdout(decoded)
+        } catch (error) {
+          killSpawnedCommandTree(child)
+          finish(error instanceof Error ? error : new Error(String(error)))
+          return
+        }
+        if (shouldStop === true) {
           // Why: parser hit its limit. Kill git and resolve cleanly — the
           // partial output we already parsed is the intended result.
           stoppedEarly = true
@@ -694,7 +718,7 @@ export async function gitStreamStdout(
           finish(new Error('git stderr exceeded maxBuffer.'))
           return
         }
-        stderr += chunk.toString('utf-8')
+        stderr += stderrDecoder.write(chunk)
       }
       function onError(error: Error): void {
         finish(error)

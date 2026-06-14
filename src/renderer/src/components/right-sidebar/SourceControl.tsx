@@ -1000,10 +1000,17 @@ function SourceControlInner(): React.JSX.Element {
         hugeRepoWarningDismissed.add(worktreeId)
         const folderName = folders[0]
         toast.warning(
-          `This repository has too many active changes. Add "${folderName}" to .gitignore?`,
+          translate(
+            'auto.components.right.sidebar.SourceControl.hugeRepoIgnorePrompt',
+            'This repository has too many active changes. Add "{{value0}}" to .gitignore?',
+            { value0: folderName }
+          ),
           {
             action: {
-              label: 'Add to .gitignore',
+              label: translate(
+                'auto.components.right.sidebar.SourceControl.hugeRepoIgnoreAction',
+                'Add to .gitignore'
+              ),
               onClick: () => {
                 void window.api.git
                   .appendGitignore({ worktreePath, folderName })
@@ -5989,7 +5996,8 @@ export function TooManyChangesBanner({ limit }: { limit: number }): React.JSX.El
         <span className="text-xs text-foreground">
           {translate(
             'auto.components.right.sidebar.SourceControl.tooManyChanges',
-            `Too many changes detected. Only the first ${limit.toLocaleString()} are shown.`
+            'Too many changes detected. Only the first {{value0}} are shown.',
+            { value0: limit.toLocaleString() }
           )}
         </span>
       </div>

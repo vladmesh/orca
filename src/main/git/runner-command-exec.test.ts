@@ -304,4 +304,21 @@ describe('gitStreamStdout', () => {
 
     await rejection
   })
+
+  it('rejects (not crashes) when the onStdout callback throws', async () => {
+    const child = createMockChildProcess(1234)
+    spawnMock.mockReturnValue(child)
+
+    const promise = gitStreamStdout(['status'], {
+      cwd: '/repo',
+      onStdout: () => {
+        throw new Error('parser blew up')
+      }
+    })
+    const rejection = expect(promise).rejects.toThrow('parser blew up')
+    child.stdout.emit('data', Buffer.from('? a.txt\n'))
+
+    await rejection
+    expect(child.kill).toHaveBeenCalled()
+  })
 })

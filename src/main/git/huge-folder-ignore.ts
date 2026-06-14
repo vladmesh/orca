@@ -39,13 +39,21 @@ export async function findKnownHugeFolderPathsToIgnore(worktreePath: string): Pr
 /**
  * Append a folder pattern to the worktree's .gitignore (creating it if absent),
  * skipping the write if the exact line is already present. Returns true on write.
+ *
+ * `folderName` comes from the renderer, so it is restricted to the known-huge
+ * allowlist (single path segment, no separators/newlines) before being written
+ * — otherwise a crafted value could inject arbitrary lines into .gitignore.
  */
 export async function appendFolderToGitignore(
   worktreePath: string,
   folderName: string
 ): Promise<boolean> {
+  const safeFolderName = folderName.trim()
+  if (!KNOWN_HUGE_FOLDER_NAMES.includes(safeFolderName) || /[\\/\r\n]/.test(safeFolderName)) {
+    throw new Error(`Refusing to add unrecognized folder to .gitignore: ${folderName}`)
+  }
   const gitignorePath = path.join(worktreePath, '.gitignore')
-  const line = `${folderName}/`
+  const line = `${safeFolderName}/`
   let existingContent = ''
   try {
     existingContent = await readFile(gitignorePath, 'utf-8')
@@ -55,7 +63,7 @@ export async function appendFolderToGitignore(
   const alreadyListed = existingContent
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .some((l) => l === folderName || l === line)
+    .some((l) => l === safeFolderName || l === line)
   if (alreadyListed) {
     return false
   }

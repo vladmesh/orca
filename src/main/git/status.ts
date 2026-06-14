@@ -81,7 +81,13 @@ export async function getStatus(
 ): Promise<GitStatusResult> {
   let effectiveUpstreamStatus: GitUpstreamStatus | undefined
   let statusSucceeded = false
-  const limit = options.limit ?? DEFAULT_GIT_STATUS_LIMIT
+  // Why: a negative/fractional/NaN limit would trigger spurious early-stop or
+  // inconsistent truncation; fall back to the default unless it's a valid
+  // non-negative integer (0 explicitly disables the cap).
+  const limit =
+    typeof options.limit === 'number' && Number.isInteger(options.limit) && options.limit >= 0
+      ? options.limit
+      : DEFAULT_GIT_STATUS_LIMIT
 
   // Why: detectConflictOperation (4 existsSync + readFile) and git status are
   // independent. Running them concurrently saves one round-trip of I/O latency.

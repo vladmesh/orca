@@ -73,7 +73,13 @@ export async function getStatusOp(
 }> {
   const worktreePath = params.worktreePath as string
   const includeIgnored = params.includeIgnored === true
-  const limit = typeof params.limit === 'number' ? params.limit : DEFAULT_GIT_STATUS_LIMIT
+  // Why: reject non-finite/negative limits so the cap guard stays reliable
+  // (NaN would silently disable capping; negatives would over-truncate).
+  const rawLimit = params.limit
+  const limit =
+    typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit >= 0
+      ? Math.floor(rawLimit)
+      : DEFAULT_GIT_STATUS_LIMIT
   const conflictOperation = await detectConflictOperation(worktreePath)
   const entries: Record<string, unknown>[] = []
   let head: string | undefined

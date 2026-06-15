@@ -8479,7 +8479,8 @@
             "ef182dcb12": "搜索",
             "fc3095d2ed": "探险家",
             "aiVaultSessionHistory": "Agents",
-            "folderWorkspaces": "Attached worktrees"
+            "folderWorkspaces": "Attached worktrees",
+            "parentPrChecks": "PR Checks"
           },
           "right": {
             "panel": {
@@ -10841,6 +10842,45 @@
           "countMany": "{{value0}} attached worktrees",
           "emptyTitle": "No attached worktrees yet",
           "emptyCopy": "Worktrees created from this workspace will show up here."
+        },
+        "FolderWorkspacePrChecksPanel": {
+          "unavailable": "PR checks are only shown for folder workspaces.",
+          "refresh": "Refresh PR checks",
+          "emptyTitle": "No attached worktrees yet",
+          "emptyCopy": "PR checks will appear here after worktrees are attached to this folder workspace.",
+          "openChecksTab": "Open {{value0}} Checks tab",
+          "openReviewExternally": "Open {{value0}} externally",
+          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown"
+        },
+        "parentPrChecks": {
+          "rowSummary": {
+            "failingCount": "{{value0}} failing",
+            "pendingCount": "{{value0}} pending",
+            "checksFailing": "Checks failing",
+            "mergeConflicts": "Merge conflicts",
+            "checksPending": "Checks pending",
+            "checksPassing": "Checks passing",
+            "merged": "Merged",
+            "closedWithoutMerge": "Closed without merge",
+            "draftReview": "Draft review",
+            "noCheckSignal": "No check signal",
+            "reviewUnavailable": "Review status unavailable",
+            "noPrLinked": "No PR linked",
+            "detailsUnavailable": "Review details unavailable",
+            "refreshFailed": "Refresh failed",
+            "checking": "Checking review status…",
+            "notFetched": "Status not fetched yet",
+            "unavailableWorktree": "Unavailable for this worktree"
+          },
+          "groups": {
+            "needsAttention": "Needs attention",
+            "pending": "Pending",
+            "merged": "Merged",
+            "passing": "Passing",
+            "draftOrNoChecks": "Draft / no checks",
+            "noPr": "No PR",
+            "unavailable": "Unavailable"
+          }
         }
       },
       "link": {

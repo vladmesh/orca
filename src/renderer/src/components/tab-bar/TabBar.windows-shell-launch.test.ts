@@ -83,7 +83,9 @@ vi.mock('react', async () => {
     memo: <T>(component: T) => component,
     useEffect: () => {},
     useLayoutEffect: () => {},
+    useCallback: <T extends (...args: never[]) => unknown>(callback: T) => callback,
     useMemo: <T>(factory: () => T) => factory(),
+    useCallback: <T extends (...args: never[]) => unknown>(callback: T) => callback,
     useRef: <T>(current: T) => ({ current }),
     useState: <T>(initial: T | (() => T)) => {
       const value = typeof initial === 'function' ? (initial as () => T)() : initial

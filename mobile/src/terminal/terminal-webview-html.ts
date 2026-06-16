@@ -245,7 +245,13 @@ export const XTERM_HTML = `<!DOCTYPE html>
       if (!term) return;
       var cellW = getCellWidth();
       var cellH = getCellHeight();
-      if (cellW > 0 && cellH > 0) {
+      // Why: an active alternate-screen TUI (Claude Code, vim, etc.) is an exact
+      // screen snapshot. Locally resizing the mobile xterm reflows the alt buffer
+      // and drops cell attributes (white text) / duplicates frames — the same
+      // hazard adjustRowsForViewport disables itself to avoid. Skip the local
+      // resize; the server PTY reflow (RN refit → updateViewport → re-init) is
+      // the only safe way to change an alt-screen grid.
+      if (cellW > 0 && cellH > 0 && !activeAltScreenSnapshot) {
         var cols = Math.max(1, Math.floor(window.innerWidth / cellW));
         var rows = Math.max(8, Math.floor(window.innerHeight / cellH));
         term.resize(cols, rows);

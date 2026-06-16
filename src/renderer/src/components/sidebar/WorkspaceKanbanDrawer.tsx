@@ -141,7 +141,7 @@ export default function WorkspaceKanbanDrawer({
       toast.error(
         translate(
           'auto.components.sidebar.WorkspaceKanbanDrawer.1975a4e480',
-          'Linear status sync failed'
+          'Task status sync failed'
         ),
         { description }
       )
@@ -150,7 +150,7 @@ export default function WorkspaceKanbanDrawer({
     toast.warning(
       translate(
         'auto.components.sidebar.WorkspaceKanbanDrawer.e02b0d92ff',
-        'Linear status sync skipped'
+        'Task status sync skipped'
       ),
       { description }
     )
@@ -177,7 +177,7 @@ export default function WorkspaceKanbanDrawer({
           useAppStore.getState().getKnownWorktreeById(worktreeId)?.workspaceStatus
       }).then((result) => {
         if (result.updated > 0 || result.failed > 0 || result.messages.length > 0) {
-          console.info('Workspace board Linear status sync result', result)
+          console.info('Workspace board task status sync result', result)
         }
         handleTaskStatusSyncResult(result)
       })

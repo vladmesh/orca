@@ -7,6 +7,7 @@ import {
 } from '../../src/renderer/src/components/status-bar/workspace-space-presentation'
 import { buildTreemapLayout } from '../../src/renderer/src/components/status-bar/workspace-space-layout'
 import { stats, type TimingStats } from './non-terminal-benchmark-stats'
+import { buildWorkspaceSpaceEditorActivityByWorktree } from '../../src/renderer/src/components/status-bar/workspace-space-editor-activity'
 
 const UI_ITERATIONS = 100
 
@@ -22,8 +23,8 @@ export type WorkspaceSpaceDecisionShapeResult = {
   scenario: string
   rows: number
   openFiles: number
-  stats: TimingStats
-  indexedStats: TimingStats
+  legacyUnindexedStats: TimingStats
+  productionIndexedStats: TimingStats
 }
 
 type ProjectionScenario = {
@@ -164,17 +165,15 @@ function countEditorFilesCurrentShape(
   return dirtyCount
 }
 
-function countEditorFilesIndexed(
+function countEditorFilesProductionIndexed(
   rows: WorkspaceSpaceWorktree[],
   openFiles: OpenFileShape[]
 ): number {
-  const dirtyByWorktree = new Map<string, number>()
-  for (const file of openFiles) {
-    if (file.isDirty) {
-      dirtyByWorktree.set(file.worktreeId, (dirtyByWorktree.get(file.worktreeId) ?? 0) + 1)
-    }
-  }
-  return rows.reduce((total, row) => total + (dirtyByWorktree.get(row.worktreeId) ?? 0), 0)
+  const activityByWorktree = buildWorkspaceSpaceEditorActivityByWorktree(openFiles, {})
+  return rows.reduce(
+    (total, row) => total + (activityByWorktree.get(row.worktreeId)?.dirtyBufferCount ?? 0),
+    0
+  )
 }
 
 export function measureWorkspaceSpaceDecisionShape(
@@ -183,17 +182,17 @@ export function measureWorkspaceSpaceDecisionShape(
   const rows = makeWorkspaceSpaceRows(rowCount)
   const openFiles = makeOpenFilesForRows(rows, 5)
   let sink = 0
-  const currentStats = stats(
+  const legacyUnindexedStats = stats(
     Array.from({ length: UI_ITERATIONS }, () => {
       const startedAt = performance.now()
       sink += countEditorFilesCurrentShape(rows, openFiles)
       return performance.now() - startedAt
     })
   )
-  const indexedStats = stats(
+  const productionIndexedStats = stats(
     Array.from({ length: UI_ITERATIONS }, () => {
       const startedAt = performance.now()
-      sink += countEditorFilesIndexed(rows, openFiles)
+      sink += countEditorFilesProductionIndexed(rows, openFiles)
       return performance.now() - startedAt
     })
   )
@@ -204,7 +203,7 @@ export function measureWorkspaceSpaceDecisionShape(
     scenario: 'Resource Manager delete-readiness editor-file counting shape',
     rows: rowCount,
     openFiles: openFiles.length,
-    stats: currentStats,
-    indexedStats
+    legacyUnindexedStats,
+    productionIndexedStats
   }
 }

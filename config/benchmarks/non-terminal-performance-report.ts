@@ -98,7 +98,7 @@ export function renderReport({
   const decisionRows = workspaceSpaceResults.decisionShapeResults
     .map(
       (result) =>
-        `| ${result.scenario} | ${result.rows} | ${result.openFiles} | ${formatStats(result.stats)} | ${formatStats(result.indexedStats)} |`
+        `| ${result.scenario} | ${result.rows} | ${result.openFiles} | ${formatStats(result.legacyUnindexedStats)} | ${formatStats(result.productionIndexedStats)} |`
     )
     .join('\n')
 
@@ -143,7 +143,7 @@ ${fanoutRows}
 
 ### Startup duplicate refresh measurement
 
-This measures a startup-shaped all-repo refresh once versus twice against real temporary git repositories. The duplicate shape mirrors App startup plus the Sidebar repo-count effect.
+This measures a startup-shaped all-repo refresh once versus twice against real temporary git repositories. The duplicate shape mirrors the pre-fix App startup plus Sidebar repo-count effect; the product path now coalesces identical concurrent \`fetchAllWorktrees()\` waves so that duplicate startup callers pay the single-wave shape.
 
 | Scenario | Repos | Extra worktrees per repo | Refresh waves | Returned worktrees | Git processes / iteration | Timing |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -154,7 +154,7 @@ ${startupRows}
 - Current \`listWorktrees\` uses one \`git worktree list --porcelain -z\` subprocess per local repo refresh on current git.
 - Sparse-checkout annotation no longer adds N git subprocesses per worktree; it uses filesystem reads/stat through \`resolveGitDir\` + \`info/sparse-checkout\` checks.
 - I did not find a fixed idle worktree-list poller. In a 60-second idle window with no repo/runtime events, expected worktree-list refreshes are 0.
-- The remaining churn risk is burst fanout, especially startup: \`App.tsx\` startup and the Sidebar repo-count effect can produce two all-repo refresh waves. In the real-git startup benchmark, 20 repos × 5 extra worktrees doubled the git process count from 20 to 40 and roughly doubled wall time. At 100 local repos, the same shape would be 200 repo-scoped refreshes / local git subprocesses across the two waves.
+- The measured startup burst risk is addressed for identical concurrent all-repo refreshes: \`fetchAllWorktrees()\` now joins an in-flight refresh when the repo-id set and hydration phase match. In the real-git startup benchmark, the duplicate shape shows the avoided process fanout: 20 repos × 5 extra worktrees doubles the git process count from 20 to 40. At 100 local repos, avoiding the second identical wave avoids another 100 local git subprocesses.
 - The visible Source Control git-status poll is separate: it runs every 3s only when eligible/visible for the active worktree and uses \`git status\`, not \`git worktree list\`.
 
 ## Item 4: persistence and store payload bloat
@@ -204,9 +204,9 @@ ${projectionRows}
 
 ### Delete-readiness editor-file counting shape
 
-The current Resource Manager decision-details loop derives editor counts per row by filtering the full open-file list for each row. This benchmark mirrors that shape and compares it with a pre-indexed map. It is a measurement of the algorithmic shape, not a product behavior change.
+The legacy Resource Manager decision-details loop derived editor counts per row by filtering the full open-file list for each row. The production path now builds one pre-indexed map per render and reuses it for every workspace row.
 
-| Scenario | Rows | Open files | Current-shape timing | Indexed-shape timing |
+| Scenario | Rows | Open files | Legacy unindexed timing | Production indexed timing |
 | --- | ---: | ---: | ---: | ---: |
 ${decisionRows}
 
@@ -214,15 +214,15 @@ ${decisionRows}
 
 - Opening the Resource Manager panel does not automatically run the disk scan; the scan is manual. Duplicate scan requests are deduped in both renderer and main, and cancel is wired through an AbortController.
 - Local POSIX scans use one \`du -k -d 1\` subprocess per scanned local worktree. Folder repos map to one workspace each, so the 30-repo sample used 30 \`du\` processes per scan iteration.
-- The pure filter/sort/treemap helpers scale acceptably in these synthetic samples, but the delete-readiness editor-file counting shape is a real UI-side scaling risk at thousands of rows/open files. If the panel janks after a scan result lands, pre-indexing editor/dirty counts by worktree is the first small fix to test.
+- The pure filter/sort/treemap helpers scale acceptably in these synthetic samples. The measured delete-readiness editor-file counting risk is addressed by pre-indexing editor/dirty counts by worktree before building row decision details.
 - After scan rows exist, the panel auto-refreshes git status for deletable candidate rows with concurrency 6. That is not idle unless a scan result is present, but a large scan can trigger a follow-up git-status burst.
 
 ## Suggested next actions
 
 1. Skip browser/webview benchmarking in this branch while that work has a separate owner.
-2. For item 3, consider a small startup-only fix: add an in-flight all-repo refresh dedupe/coalescer so the App startup \`fetchAllWorktrees\` wave and the Sidebar repo-count effect join the same refresh instead of double-refreshing every repo.
+2. For item 3, the startup all-repo refresh coalescer is implemented; if startup still feels heavy, the next measurement should be full Electron startup timing rather than more \`listWorktrees\` microbenchmarks.
 3. For item 4, if editor-heavy users report periodic stalls, prototype an editor-session patch that can update active editor IDs/drafts without rebuilding the entire open-file payload; keep a byte-size regression test at the patch boundary.
-4. For item 5, if Resource Manager jank is reproduced, pre-index per-worktree editor counts before building decision details and benchmark panel commit time before touching disk-scan behavior.
+4. For item 5, the editor-count pre-index is implemented; if Resource Manager jank persists, benchmark full React commit time before touching disk-scan behavior.
 5. Keep future product fixes separate from this benchmark harness so before/after numbers stay trustworthy.
 `
 }

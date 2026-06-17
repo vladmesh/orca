@@ -1164,7 +1164,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
           className={cn(
             'flex shrink-0 justify-center',
             newCardStyle && 'mr-1',
-            compactCards ? 'items-start pt-px' : 'items-start pt-[2px]',
+            compactCards && newCardStyle ? 'items-start pt-px' : 'items-start pt-[2px]',
             affiliateListMode && 'px-1'
           )}
           data-worktree-card-status-slot=""

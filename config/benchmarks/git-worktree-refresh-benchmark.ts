@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile)
 const GIT_WARMUP_ITERATIONS = 2
 const GIT_ITERATIONS = 20
 
-type GitCountReader = () => Promise<number>
+export type GitCountReader = () => Promise<number>
 
 export type GitResult = {
   scenario: string
@@ -26,7 +26,7 @@ async function git(args: string[], cwd: string): Promise<void> {
   await execFileAsync('git', args, { cwd })
 }
 
-async function createGitRepoWithWorktrees(
+export async function createGitRepoWithWorktrees(
   worktreeCount: number
 ): Promise<{ root: string; repo: string }> {
   const root = await mkdtemp(path.join(tmpdir(), 'orca-non-terminal-git-bench-'))
@@ -86,7 +86,9 @@ async function readGitProcessCount(countFile: string): Promise<number> {
   return countText.split('\n').filter(Boolean).length
 }
 
-async function withGitCountShim<T>(fn: (readCount: GitCountReader) => Promise<T>): Promise<T> {
+export async function withGitCountShim<T>(
+  fn: (readCount: GitCountReader) => Promise<T>
+): Promise<T> {
   const realGitPath = await resolveRealGitPath()
   const shim = await createGitCountShim()
   const previousPath = process.env.PATH

@@ -12,10 +12,10 @@ Measured the pure row-building path used by `WorktreeList`: `buildRows(...)`, pl
 
 | Scenario | Worktrees | Output rows | Timing |
 | --- | ---: | ---: | ---: |
-| repo grouping, 10 repos × 100 worktrees | 1000 | 1061 | 0.39 ms median / 3.39 ms p95 / 0.69 ms mean (100 iterations) |
-| status grouping, 10 repos × 100 worktrees | 1000 | 1053 | 0.44 ms median / 1.57 ms p95 / 0.71 ms mean (100 iterations) |
-| PR grouping, 10 repos × 100 worktrees | 1000 | 1052 | 1.66 ms median / 2.59 ms p95 / 1.87 ms mean (100 iterations) |
-| host sections, 10 repos × 100 worktrees × 3 hosts | 1000 | 1066 | 0.58 ms median / 2.54 ms p95 / 0.72 ms mean (100 iterations) |
+| repo grouping, 10 repos × 100 worktrees | 1000 | 1061 | 0.39 ms median / 2.94 ms p95 / 0.58 ms mean (100 iterations) |
+| status grouping, 10 repos × 100 worktrees | 1000 | 1053 | 0.44 ms median / 1.28 ms p95 / 0.7 ms mean (100 iterations) |
+| PR grouping, 10 repos × 100 worktrees | 1000 | 1052 | 1.67 ms median / 2.64 ms p95 / 1.88 ms mean (100 iterations) |
+| host sections, 10 repos × 100 worktrees × 3 hosts | 1000 | 1066 | 0.56 ms median / 2.66 ms p95 / 0.73 ms mean (100 iterations) |
 
 ### Item 2 findings
 
@@ -30,10 +30,10 @@ Measured actual `listWorktrees(repoPath)` calls against temporary git repositori
 
 | Scenario | Repos | Extra worktrees per repo | Returned worktrees | Git processes / iteration | Timing |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| single repo refresh | 1 | 10 | 11 | 1 | 7.21 ms median / 8.14 ms p95 / 7.44 ms mean (20 iterations) |
-| single repo refresh | 1 | 30 | 31 | 1 | 10.19 ms median / 11.15 ms p95 / 10.29 ms mean (20 iterations) |
-| single repo refresh | 1 | 60 | 61 | 1 | 14.44 ms median / 15.01 ms p95 / 14.43 ms mean (20 iterations) |
-| concurrent all-repo refresh | 5 | 10 | 55 | 5 | 11.72 ms median / 13.52 ms p95 / 11.96 ms mean (20 iterations) |
+| single repo refresh | 1 | 10 | 11 | 1 | 7.28 ms median / 8.43 ms p95 / 7.49 ms mean (20 iterations) |
+| single repo refresh | 1 | 30 | 31 | 1 | 9.99 ms median / 11.17 ms p95 / 10.24 ms mean (20 iterations) |
+| single repo refresh | 1 | 60 | 61 | 1 | 18.53 ms median / 53.71 ms p95 / 26.68 ms mean (20 iterations) |
+| concurrent all-repo refresh | 5 | 10 | 55 | 5 | 11.77 ms median / 14.1 ms p95 / 12.26 ms mean (20 iterations) |
 
 ### Item 3 refresh-frequency / fanout check
 
@@ -63,12 +63,23 @@ Code inspection and count modeling for the known worktree refresh callers. For l
 | runtime reposChanged / remote connect for one host | 100 | 100 | 0 | 1 | event-driven | Runtime-host paths call provider listWorktrees once per repo, not local git. |
 | Automations page mount | 100 | 100 | 100 | 0 | event-driven | AutomationsPage mount calls fetchAllWorktrees() before refreshing automations. |
 
+### Startup duplicate refresh measurement
+
+This measures a startup-shaped all-repo refresh once versus twice against real temporary git repositories. The duplicate shape mirrors App startup plus the Sidebar repo-count effect.
+
+| Scenario | Repos | Extra worktrees per repo | Refresh waves | Returned worktrees | Git processes / iteration | Timing |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| single all-repo startup refresh wave | 10 | 5 | 1 | 60 | 10 | 17.76 ms median / 19.84 ms p95 / 17.95 ms mean (10 iterations) |
+| startup-shaped duplicate all-repo refresh waves | 10 | 5 | 2 | 120 | 20 | 33.28 ms median / 38.68 ms p95 / 33.75 ms mean (10 iterations) |
+| single all-repo startup refresh wave | 20 | 5 | 1 | 120 | 20 | 29.77 ms median / 34.23 ms p95 / 30.49 ms mean (10 iterations) |
+| startup-shaped duplicate all-repo refresh waves | 20 | 5 | 2 | 240 | 40 | 61.37 ms median / 102.16 ms p95 / 69.4 ms mean (10 iterations) |
+
 ### Item 3 findings
 
 - Current `listWorktrees` uses one `git worktree list --porcelain -z` subprocess per local repo refresh on current git.
 - Sparse-checkout annotation no longer adds N git subprocesses per worktree; it uses filesystem reads/stat through `resolveGitDir` + `info/sparse-checkout` checks.
 - I did not find a fixed idle worktree-list poller. In a 60-second idle window with no repo/runtime events, expected worktree-list refreshes are 0.
-- The remaining churn risk is burst fanout, especially startup: `App.tsx` startup and the Sidebar repo-count effect can plausibly produce two all-repo refresh waves. At 100 local repos, that is 200 repo-scoped refreshes / local git subprocesses across the two waves.
+- The remaining churn risk is burst fanout, especially startup: `App.tsx` startup and the Sidebar repo-count effect can produce two all-repo refresh waves. In the real-git startup benchmark, 20 repos × 5 extra worktrees doubled the git process count from 20 to 40 and roughly doubled wall time. At 100 local repos, the same shape would be 200 repo-scoped refreshes / local git subprocesses across the two waves.
 - The visible Source Control git-status poll is separate: it runs every 3s only when eligible/visible for the active worktree and uses `git status`, not `git worktree list`.
 
 ## Item 4: persistence and store payload bloat
@@ -80,22 +91,22 @@ Measured production session builders with a synthetic non-browser profile: 25 re
 | Scenario | Changed fields | Patch keys | Patch byte estimate | Build timing |
 | --- | --- | --- | ---: | ---: |
 | active worktree switch | activeWorktreeId | activeWorktreeId | 64 B | 0 ms median / 0 ms p95 / 0 ms mean (100 iterations) |
-| editor focus change | activeFileIdByWorktree, activeTabTypeByWorktree | openFilesByWorktree, activeFileIdByWorktree, activeTabTypeByWorktree, markdownFrontmatterVisible | 384.28 KB | 0.39 ms median / 0.58 ms p95 / 0.43 ms mean (100 iterations) |
-| dirty editor draft edit | editorDrafts | openFilesByWorktree, activeFileIdByWorktree, activeTabTypeByWorktree, markdownFrontmatterVisible | 384.28 KB | 0.34 ms median / 0.54 ms p95 / 0.38 ms mean (100 iterations) |
-| unified editor tab order/layout change | unifiedTabsByWorktree | unifiedTabs, tabGroups, tabGroupLayouts, activeGroupIdByWorktree | 761.35 KB | 0.34 ms median / 0.49 ms p95 / 0.36 ms mean (100 iterations) |
+| editor focus change | activeFileIdByWorktree, activeTabTypeByWorktree | openFilesByWorktree, activeFileIdByWorktree, activeTabTypeByWorktree, markdownFrontmatterVisible | 384.28 KB | 0.41 ms median / 0.54 ms p95 / 0.42 ms mean (100 iterations) |
+| dirty editor draft edit | editorDrafts | openFilesByWorktree, activeFileIdByWorktree, activeTabTypeByWorktree, markdownFrontmatterVisible | 384.28 KB | 0.35 ms median / 0.48 ms p95 / 0.36 ms mean (100 iterations) |
+| unified editor tab order/layout change | unifiedTabsByWorktree | unifiedTabs, tabGroups, tabGroupLayouts, activeGroupIdByWorktree | 761.35 KB | 0.37 ms median / 0.69 ms p95 / 0.43 ms mean (100 iterations) |
 
 ### Full payload / disk-stringify shape
 
 | Scenario | Repos | Worktrees | Open files | Dirty draft bytes | Workspace session JSON | Full persisted JSON | Payload build timing | Full stringify timing | Largest top-level fields |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| scaled editor/workspace state; browser maps intentionally empty | 25 | 500 | 1000 | 100 KB | 1.43 MB | 1.56 MB | 0.81 ms median / 1.03 ms p95 / 0.84 ms mean (30 iterations) | 1.56 ms median / 1.87 ms p95 / 1.6 ms mean (30 iterations) | workspaceSession 1.43 MB; worktreeMeta 44.78 KB; settings 7.56 KB; repos 3.88 KB; ui 2.4 KB |
+| scaled editor/workspace state; browser maps intentionally empty | 25 | 500 | 1000 | 100 KB | 1.43 MB | 1.56 MB | 1.02 ms median / 1.54 ms p95 / 1.11 ms mean (30 iterations) | 1.91 ms median / 2.47 ms p95 / 1.94 ms mean (30 iterations) | workspaceSession 1.43 MB; worktreeMeta 44.78 KB; settings 7.56 KB; repos 3.88 KB; ui 2.4 KB |
 
 ### Subscriber gate checks
 
 | Scenario | Updates | Persist calls | Elapsed | Notes |
 | --- | ---: | ---: | ---: | --- |
-| 200 unrelated store ticks after warmup | 200 | 0 | 5.99 ms | Only agentStatusEpoch changed; session-relevant references stayed stable. |
-| 50 rapid editor-focus-shaped relevant updates | 50 | 1 | 8.38 ms | Debounce coalesced the burst; the emitted patch still uses the full editor-session shape. |
+| 200 unrelated store ticks after warmup | 200 | 0 | 6.1 ms | Only agentStatusEpoch changed; session-relevant references stayed stable. |
+| 50 rapid editor-focus-shaped relevant updates | 50 | 1 | 9.15 ms | Debounce coalesced the burst; the emitted patch still uses the full editor-session shape. |
 
 ### Item 4 findings
 
@@ -112,21 +123,21 @@ Measured the Resource Manager workspace-space analyzer with folder repos. Folder
 
 | Scenario | Repos | Worktrees | Top-level items | Raw analyzer progress events | du processes / iteration | Timing |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 10 folder repos, 8 top dirs + 4 root files each | 10 | 10 | 120 | 51 | 10 | 18.71 ms median / 19.95 ms p95 / 18.9 ms mean (3 iterations) |
-| 30 folder repos, 8 top dirs + 4 root files each | 30 | 30 | 360 | 151 | 30 | 52.36 ms median / 58.5 ms p95 / 54.13 ms mean (3 iterations) |
+| 10 folder repos, 8 top dirs + 4 root files each | 10 | 10 | 120 | 51 | 10 | 28.03 ms median / 35.62 ms p95 / 29.65 ms mean (3 iterations) |
+| 30 folder repos, 8 top dirs + 4 root files each | 30 | 30 | 360 | 151 | 30 | 54.56 ms median / 67.6 ms p95 / 58.77 ms mean (3 iterations) |
 
 ### UI projection helpers
 
 | Scenario | Source rows | Output rows | Git-status candidates | Timing |
 | --- | ---: | ---: | ---: | ---: |
-| filter query + sort by size | 1000 | 111 | 0 | 0.11 ms median / 0.13 ms p95 / 0.12 ms mean (100 iterations) |
-| only deletable + sort by repo | 1000 | 960 | 0 | 0.16 ms median / 0.26 ms p95 / 0.17 ms mean (100 iterations) |
-| git-status candidate selection | 1000 | 960 | 960 | 0.01 ms median / 0.02 ms p95 / 0.01 ms mean (100 iterations) |
-| treemap layout for all visible rows | 1000 | 1000 | 0 | 0.13 ms median / 0.43 ms p95 / 0.2 ms mean (100 iterations) |
-| filter query + sort by size | 5000 | 111 | 0 | 0.51 ms median / 0.67 ms p95 / 0.55 ms mean (100 iterations) |
-| only deletable + sort by repo | 5000 | 4800 | 0 | 0.95 ms median / 1.11 ms p95 / 0.98 ms mean (100 iterations) |
+| filter query + sort by size | 1000 | 111 | 0 | 0.12 ms median / 0.22 ms p95 / 0.15 ms mean (100 iterations) |
+| only deletable + sort by repo | 1000 | 960 | 0 | 0.18 ms median / 0.35 ms p95 / 0.2 ms mean (100 iterations) |
+| git-status candidate selection | 1000 | 960 | 960 | 0.01 ms median / 0.02 ms p95 / 0.02 ms mean (100 iterations) |
+| treemap layout for all visible rows | 1000 | 1000 | 0 | 0.14 ms median / 0.47 ms p95 / 0.22 ms mean (100 iterations) |
+| filter query + sort by size | 5000 | 111 | 0 | 0.55 ms median / 0.73 ms p95 / 0.58 ms mean (100 iterations) |
+| only deletable + sort by repo | 5000 | 4800 | 0 | 0.98 ms median / 1.17 ms p95 / 1 ms mean (100 iterations) |
 | git-status candidate selection | 5000 | 4800 | 4800 | 0.04 ms median / 0.04 ms p95 / 0.04 ms mean (100 iterations) |
-| treemap layout for all visible rows | 5000 | 5000 | 0 | 0.69 ms median / 0.98 ms p95 / 0.73 ms mean (100 iterations) |
+| treemap layout for all visible rows | 5000 | 5000 | 0 | 0.71 ms median / 0.97 ms p95 / 0.76 ms mean (100 iterations) |
 
 ### Delete-readiness editor-file counting shape
 
@@ -134,8 +145,8 @@ The current Resource Manager decision-details loop derives editor counts per row
 
 | Scenario | Rows | Open files | Current-shape timing | Indexed-shape timing |
 | --- | ---: | ---: | ---: | ---: |
-| Resource Manager delete-readiness editor-file counting shape | 1000 | 5000 | 30.94 ms median / 34.53 ms p95 / 29.04 ms mean (100 iterations) | 0.03 ms median / 0.08 ms p95 / 0.04 ms mean (100 iterations) |
-| Resource Manager delete-readiness editor-file counting shape | 5000 | 25000 | 352.17 ms median / 454.25 ms p95 / 365.09 ms mean (100 iterations) | 0.21 ms median / 0.32 ms p95 / 0.23 ms mean (100 iterations) |
+| Resource Manager delete-readiness editor-file counting shape | 1000 | 5000 | 33.09 ms median / 39.09 ms p95 / 32.26 ms mean (100 iterations) | 0.04 ms median / 0.09 ms p95 / 0.05 ms mean (100 iterations) |
+| Resource Manager delete-readiness editor-file counting shape | 5000 | 25000 | 363.65 ms median / 464.33 ms p95 / 383.3 ms mean (100 iterations) | 0.22 ms median / 0.28 ms p95 / 0.23 ms mean (100 iterations) |
 
 ### Item 5 findings
 
@@ -147,7 +158,7 @@ The current Resource Manager decision-details loop derives editor counts per row
 ## Suggested next actions
 
 1. Skip browser/webview benchmarking in this branch while that work has a separate owner.
-2. For item 3, consider a small startup-only fix or benchmark: dedupe/coalesce the App startup `fetchAllWorktrees` wave and the Sidebar repo-count effect so startup cannot double-refresh every repo.
+2. For item 3, consider a small startup-only fix: add an in-flight all-repo refresh dedupe/coalescer so the App startup `fetchAllWorktrees` wave and the Sidebar repo-count effect join the same refresh instead of double-refreshing every repo.
 3. For item 4, if editor-heavy users report periodic stalls, prototype an editor-session patch that can update active editor IDs/drafts without rebuilding the entire open-file payload; keep a byte-size regression test at the patch boundary.
 4. For item 5, if Resource Manager jank is reproduced, pre-index per-worktree editor counts before building decision details and benchmark panel commit time before touching disk-scan behavior.
 5. Keep future product fixes separate from this benchmark harness so before/after numbers stay trustworthy.

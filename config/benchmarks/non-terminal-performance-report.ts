@@ -2,6 +2,7 @@ import { formatStats } from './non-terminal-benchmark-stats'
 import type { GitResult } from './git-worktree-refresh-benchmark'
 import type { PersistencePayloadBenchmarkResult } from './persistence-payload-benchmark'
 import type { SidebarResult } from './sidebar-row-projection-benchmark'
+import type { StartupWorktreeRefreshResult } from './startup-worktree-refresh-benchmark'
 import type { WorktreeRefreshFanoutResult } from './worktree-refresh-fanout-benchmark'
 import type { WorkspaceSpaceBenchmarkResult } from './workspace-space-scan-benchmark'
 
@@ -9,6 +10,7 @@ type ReportInput = {
   sidebarResults: SidebarResult[]
   gitResults: GitResult[]
   worktreeFanoutResults: WorktreeRefreshFanoutResult[]
+  startupWorktreeRefreshResults: StartupWorktreeRefreshResult[]
   persistenceResults: PersistencePayloadBenchmarkResult
   workspaceSpaceResults: WorkspaceSpaceBenchmarkResult
 }
@@ -35,6 +37,7 @@ export function renderReport({
   sidebarResults,
   gitResults,
   worktreeFanoutResults,
+  startupWorktreeRefreshResults,
   persistenceResults,
   workspaceSpaceResults
 }: ReportInput): string {
@@ -54,6 +57,12 @@ export function renderReport({
     .map(
       (result) =>
         `| ${result.scenario} | ${result.repoCount} | ${result.repoScopedRefreshes} | ${result.localGitProcessesIfGitRepos} | ${result.lineageRefreshes} | ${formatIdleWindow(result.idleWindowSeconds)} | ${result.source} |`
+    )
+    .join('\n')
+  const startupRows = startupWorktreeRefreshResults
+    .map(
+      (result) =>
+        `| ${result.scenario} | ${result.repos} | ${result.worktreesPerRepo} | ${result.refreshWaves} | ${result.returnedWorktrees} | ${result.gitProcessesPerIteration} | ${formatStats(result.stats)} |`
     )
     .join('\n')
   const patchRows = persistenceResults.patchResults
@@ -132,12 +141,20 @@ Code inspection and count modeling for the known worktree refresh callers. For l
 | --- | ---: | ---: | ---: | ---: | --- | --- |
 ${fanoutRows}
 
+### Startup duplicate refresh measurement
+
+This measures a startup-shaped all-repo refresh once versus twice against real temporary git repositories. The duplicate shape mirrors App startup plus the Sidebar repo-count effect.
+
+| Scenario | Repos | Extra worktrees per repo | Refresh waves | Returned worktrees | Git processes / iteration | Timing |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+${startupRows}
+
 ### Item 3 findings
 
 - Current \`listWorktrees\` uses one \`git worktree list --porcelain -z\` subprocess per local repo refresh on current git.
 - Sparse-checkout annotation no longer adds N git subprocesses per worktree; it uses filesystem reads/stat through \`resolveGitDir\` + \`info/sparse-checkout\` checks.
 - I did not find a fixed idle worktree-list poller. In a 60-second idle window with no repo/runtime events, expected worktree-list refreshes are 0.
-- The remaining churn risk is burst fanout, especially startup: \`App.tsx\` startup and the Sidebar repo-count effect can plausibly produce two all-repo refresh waves. At 100 local repos, that is 200 repo-scoped refreshes / local git subprocesses across the two waves.
+- The remaining churn risk is burst fanout, especially startup: \`App.tsx\` startup and the Sidebar repo-count effect can produce two all-repo refresh waves. In the real-git startup benchmark, 20 repos × 5 extra worktrees doubled the git process count from 20 to 40 and roughly doubled wall time. At 100 local repos, the same shape would be 200 repo-scoped refreshes / local git subprocesses across the two waves.
 - The visible Source Control git-status poll is separate: it runs every 3s only when eligible/visible for the active worktree and uses \`git status\`, not \`git worktree list\`.
 
 ## Item 4: persistence and store payload bloat
@@ -203,7 +220,7 @@ ${decisionRows}
 ## Suggested next actions
 
 1. Skip browser/webview benchmarking in this branch while that work has a separate owner.
-2. For item 3, consider a small startup-only fix or benchmark: dedupe/coalesce the App startup \`fetchAllWorktrees\` wave and the Sidebar repo-count effect so startup cannot double-refresh every repo.
+2. For item 3, consider a small startup-only fix: add an in-flight all-repo refresh dedupe/coalescer so the App startup \`fetchAllWorktrees\` wave and the Sidebar repo-count effect join the same refresh instead of double-refreshing every repo.
 3. For item 4, if editor-heavy users report periodic stalls, prototype an editor-session patch that can update active editor IDs/drafts without rebuilding the entire open-file payload; keep a byte-size regression test at the patch boundary.
 4. For item 5, if Resource Manager jank is reproduced, pre-index per-worktree editor counts before building decision details and benchmark panel commit time before touching disk-scan behavior.
 5. Keep future product fixes separate from this benchmark harness so before/after numbers stay trustworthy.

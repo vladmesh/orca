@@ -18,13 +18,11 @@ const HOST_FILE_EXTENSIONS = new Set([
 const LOCAL_ADDRESS_PATTERN =
   /^(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[[0-9a-f:]+\])(?::\d+)?(?:[/?#].*)?$/i
 
-const HOST_PORT_PATTERN = '(?::\\d{1,5})?'
-const LOCALHOST_WITH_PORT_PATTERN = new RegExp(`^localhost${HOST_PORT_PATTERN}$`, 'i')
-const IPV4_WITH_PORT_PATTERN = new RegExp(`^(?:\\d{1,3}\\.){3}\\d{1,3}${HOST_PORT_PATTERN}$`)
-const DOMAIN_WITH_PORT_PATTERN = new RegExp(
-  `^(?=.{1,253}${HOST_PORT_PATTERN}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}${HOST_PORT_PATTERN}$`,
-  'i'
-)
+const LOCALHOST_WITH_PORT_PATTERN = /^localhost(?::\d{1,5})?$/i
+const IPV4_WITH_PORT_PATTERN =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?::\d{1,5})?$/
+const DOMAIN_WITH_PORT_PATTERN =
+  /^(?=.{1,253}(?::\d{1,5})?$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d{1,5})?$/i
 
 export type ExplicitUrlClassification =
   | { kind: 'blocked'; message: string }

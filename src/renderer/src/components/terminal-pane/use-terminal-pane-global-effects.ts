@@ -23,6 +23,7 @@ import { useTerminalScrollVisibilityMemory } from './use-terminal-scroll-visibil
 import { useTerminalContainerFitSync } from './use-terminal-container-fit-sync'
 import { pasteTerminalText } from './terminal-bracketed-paste'
 import { recordTerminalUserInputForLeaf } from './terminal-input-activity'
+import { scheduleVisibleResumeSettledRefits } from './visible-resume-refit-scheduler'
 
 const VISIBLE_RESUME_FLUSH_CHARS = 256 * 1024
 
@@ -66,6 +67,7 @@ export function useTerminalPaneGlobalEffects({
   // otherwise leak WebGL contexts — openTerminal() unconditionally creates
   // one — and exhaust Chromium's ~8-context budget across worktrees.
   const wasVisibleRef = useRef(true)
+  const cancelVisibleResumeSettledRefitsRef = useRef<(() => void) | null>(null)
   const {
     captureViewportPositions,
     withSuppressedScrollTracking,
@@ -80,6 +82,13 @@ export function useTerminalPaneGlobalEffects({
   useTerminalContainerFitSync({ isVisible, isSyncFitEnabled, managerRef, containerRef })
 
   useEffect(() => {
+    return () => {
+      cancelVisibleResumeSettledRefitsRef.current?.()
+      cancelVisibleResumeSettledRefitsRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     const manager = managerRef.current
     if (!manager) {
       return
@@ -87,6 +96,7 @@ export function useTerminalPaneGlobalEffects({
     isActiveRef.current = isActive
     isVisibleRef.current = isVisible
     if (isVisible) {
+      const resumedFromHidden = !wasVisibleRef.current
       // Why: WebGL resume can disturb xterm's viewport bookkeeping before the
       // post-resume fit runs. Capture numeric viewport positions first; the
       // restore path avoids content matching so duplicate agent log lines do
@@ -124,10 +134,20 @@ export function useTerminalPaneGlobalEffects({
         // terminals; the global reset rebuilds their render models too.
         resetAllTerminalWebglAtlases()
       })
+      if (resumedFromHidden) {
+        cancelVisibleResumeSettledRefitsRef.current?.()
+        cancelVisibleResumeSettledRefitsRef.current = scheduleVisibleResumeSettledRefits({
+          manager,
+          managerRef,
+          isVisibleRef
+        })
+      }
       wasVisibleRef.current = true
       applyPendingFollowOutputRequests()
       return
     } else if (wasVisibleRef.current) {
+      cancelVisibleResumeSettledRefitsRef.current?.()
+      cancelVisibleResumeSettledRefitsRef.current = null
       // Why: hidden DOM/layout churn can mutate xterm's viewport before the
       // pane becomes visible again. Preserve the last visible position.
       captureViewportPositions(false)

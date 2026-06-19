@@ -1,10 +1,22 @@
 import type { Page } from '@stablyai/playwright-test'
 import { test, expect } from './helpers/orca-app'
-import { waitForActiveWorktree, waitForSessionReady } from './helpers/store'
+import {
+  ensureTerminalVisible,
+  switchToWorktree,
+  waitForActiveWorktree,
+  waitForSessionReady
+} from './helpers/store'
 import { worktreeRow } from './worktree-row-locators'
 
 const MAX_CLICK_TASK_DURATION_MS = 32
 const MAX_CLICK_BACK_TIMER_DRIFT_MS = 32
+const MIN_SETTLED_TERMINAL_COLS = 60
+
+type ActiveTerminalGeometry = {
+  cols: number
+  rows: number
+  proposedCols: number | null
+}
 
 async function prepareSidebarForSwitchTest(page: Page): Promise<[string, string]> {
   return page.evaluate(async () => {
@@ -38,6 +50,55 @@ async function prepareSidebarForSwitchTest(page: Page): Promise<[string, string]
     state.setActiveWorktree(first.id)
     return [first.id, second.id]
   })
+}
+
+async function getActiveTerminalGeometry(page: Page): Promise<ActiveTerminalGeometry> {
+  return page.evaluate(() => {
+    const visibleOverlayTabId = (() => {
+      for (const overlay of document.querySelectorAll<HTMLElement>(
+        '[data-terminal-overlay-tab-id]'
+      )) {
+        const rect = overlay.getBoundingClientRect()
+        if (
+          overlay.dataset.terminalOverlayTabId &&
+          getComputedStyle(overlay).display !== 'none' &&
+          rect.width > 0 &&
+          rect.height > 0
+        ) {
+          return overlay.dataset.terminalOverlayTabId
+        }
+      }
+      return null
+    })()
+    const state = window.__store?.getState()
+    const worktreeId = state?.activeWorktreeId
+    const storeTabId =
+      state?.activeTabType === 'terminal'
+        ? state.activeTabId
+        : worktreeId
+          ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+          : null
+    const tabId = visibleOverlayTabId ?? storeTabId
+    const manager = tabId ? window.__paneManagers?.get(tabId) : null
+    const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+    if (!pane) {
+      throw new Error('No active terminal pane is available')
+    }
+    const proposed = pane.fitAddon.proposeDimensions()
+    return {
+      cols: pane.terminal.cols,
+      rows: pane.terminal.rows,
+      proposedCols: proposed?.cols ?? null
+    }
+  })
+}
+
+async function waitForRenderedWorktree(page: Page, worktreeId: string): Promise<void> {
+  await expect(page.locator('[data-rendered-active-worktree-id]')).toHaveAttribute(
+    'data-rendered-active-worktree-id',
+    worktreeId,
+    { timeout: 10_000 }
+  )
 }
 
 test.describe('Worktree switch responsiveness', () => {
@@ -152,5 +213,41 @@ test.describe('Worktree switch responsiveness', () => {
       secondCurrent: null,
       renderedWorktreeId: firstWorktreeId
     })
+  })
+
+  test('settles terminal geometry after switching back to a worktree', async ({ orcaPage }) => {
+    const [firstWorktreeId, secondWorktreeId] = await prepareSidebarForSwitchTest(orcaPage)
+    await ensureTerminalVisible(orcaPage)
+    await waitForRenderedWorktree(orcaPage, firstWorktreeId)
+    await expect(orcaPage.locator('.xterm').first()).toBeVisible()
+
+    const initialGeometry = await getActiveTerminalGeometry(orcaPage)
+    expect(initialGeometry.cols).toBeGreaterThan(MIN_SETTLED_TERMINAL_COLS)
+    expect(initialGeometry.proposedCols).toBeGreaterThan(MIN_SETTLED_TERMINAL_COLS)
+
+    await switchToWorktree(orcaPage, secondWorktreeId)
+    await ensureTerminalVisible(orcaPage)
+    await waitForRenderedWorktree(orcaPage, secondWorktreeId)
+    await switchToWorktree(orcaPage, firstWorktreeId)
+    await ensureTerminalVisible(orcaPage)
+    await waitForRenderedWorktree(orcaPage, firstWorktreeId)
+
+    await expect
+      .poll(
+        async () => {
+          const geometry = await getActiveTerminalGeometry(orcaPage)
+          return geometry.proposedCols === null
+            ? geometry.cols
+            : Math.abs(geometry.cols - geometry.proposedCols)
+        },
+        {
+          timeout: 5_000,
+          message: 'terminal columns did not settle back to the measured container width'
+        }
+      )
+      .toBeLessThanOrEqual(1)
+
+    const finalGeometry = await getActiveTerminalGeometry(orcaPage)
+    expect(finalGeometry.cols).toBeGreaterThan(MIN_SETTLED_TERMINAL_COLS)
   })
 })

@@ -263,6 +263,85 @@ describe('useTerminalPaneGlobalEffects', () => {
     expect(isVisibleRef.current).toBe(true)
   })
 
+  it('schedules settled refits after a hidden terminal becomes visible', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    const timerCallbacks: (() => void)[] = []
+    ;(
+      window as unknown as { requestAnimationFrame: typeof requestAnimationFrame }
+    ).requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      frameCallbacks.push(callback)
+      return frameCallbacks.length
+    })
+    ;(
+      window as unknown as { cancelAnimationFrame: typeof cancelAnimationFrame }
+    ).cancelAnimationFrame = vi.fn()
+    ;(
+      window as unknown as { setTimeout: (callback: () => void, delay?: number) => number }
+    ).setTimeout = vi.fn((callback: () => void) => {
+      timerCallbacks.push(callback)
+      return timerCallbacks.length
+    })
+    ;(window as unknown as { clearTimeout: (id?: number) => void }).clearTimeout = vi.fn()
+
+    const terminal = { name: 'terminal-a' }
+    const manager = {
+      getPanes: vi.fn(() => [{ id: 1, terminal }]),
+      resumeRendering: vi.fn(),
+      resetWebglTextureAtlases: vi.fn(),
+      suspendRendering: vi.fn(),
+      fitAllPanes: vi.fn(),
+      getActivePane: vi.fn(() => null),
+      setActivePane: vi.fn()
+    }
+    registerManagerForReset(manager)
+
+    const isActiveRef = { current: false }
+    const isVisibleRef = { current: false }
+
+    beginHookRender()
+    useTerminalPaneGlobalEffects({
+      tabId: 'tab-1',
+      worktreeId: 'wt-1',
+      isActive: false,
+      isVisible: false,
+      isSyncFitEnabled: false,
+      paneCount: 1,
+      managerRef: { current: manager as never },
+      containerRef: { current: null },
+      paneTransportsRef: { current: new Map() },
+      isActiveRef,
+      isVisibleRef,
+      toggleExpandPane: vi.fn()
+    })
+
+    beginHookRender()
+    useTerminalPaneGlobalEffects({
+      tabId: 'tab-1',
+      worktreeId: 'wt-1',
+      isActive: true,
+      isVisible: true,
+      isSyncFitEnabled: true,
+      paneCount: 1,
+      managerRef: { current: manager as never },
+      containerRef: { current: null },
+      paneTransportsRef: { current: new Map() },
+      isActiveRef,
+      isVisibleRef,
+      toggleExpandPane: vi.fn()
+    })
+
+    expect(mocks.fitAndFocusPanes).toHaveBeenCalledTimes(1)
+    expect(frameCallbacks).toHaveLength(1)
+    expect(timerCallbacks).toHaveLength(3)
+
+    frameCallbacks[0]?.(16)
+    for (const callback of timerCallbacks) {
+      callback()
+    }
+
+    expect(mocks.fitPanes).toHaveBeenCalledTimes(4)
+  })
+
   it('reports the active local PTY to the main output scheduler', () => {
     const manager = {
       getPanes: vi.fn(() => [{ id: 1, terminal: { name: 'terminal-a' } }]),

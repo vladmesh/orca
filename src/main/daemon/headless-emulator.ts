@@ -4,11 +4,13 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import type { TerminalViewAttributes } from '../../shared/terminal-view-attributes'
 import { TerminalMouseModeMirror } from './terminal-mouse-mode-mirror'
 import { TerminalOscCwdTitleScanner } from './terminal-osc-cwd-title-scanner'
+import { collectHeadlessOscLinkRanges } from './headless-osc-link-ranges'
 import {
   installTerminalViewAttributeResponder,
   type TerminalViewAttributeResponder
 } from './terminal-view-attribute-responder'
 import type { TerminalSnapshot, TerminalModes } from './types'
+import type { TerminalOscLinkRange } from '../../shared/terminal-osc-link-ranges'
 
 export type HeadlessEmulatorOptions = {
   cols: number
@@ -56,6 +58,7 @@ export class HeadlessEmulator {
   private serializer: SerializeAddon
   private oscText = new TerminalOscCwdTitleScanner()
   private mouseModes = new TerminalMouseModeMirror()
+  private restoredOscLinks: TerminalOscLinkRange[] = []
   private disposed = false
   private onQueryReply: ((reply: string) => void) | null
   private conptyDa1OverrideInstalled = false
@@ -256,6 +259,7 @@ export class HeadlessEmulator {
     if (this.disposed) {
       return
     }
+    this.restoredOscLinks = []
     this.terminal.resize(cols, rows)
   }
 
@@ -268,6 +272,11 @@ export class HeadlessEmulator {
     return {
       snapshotAnsi,
       scrollbackAnsi: '',
+      oscLinks: collectHeadlessOscLinkRanges(
+        this.terminal,
+        opts.scrollbackRows,
+        this.restoredOscLinks
+      ),
       rehydrateSequences: this.buildRehydrateSequences(modes),
       cwd: this.oscText.cwd,
       modes,
@@ -303,7 +312,12 @@ export class HeadlessEmulator {
     this.oscText.lastTitle = title
   }
 
+  setRestoredOscLinks(links: TerminalOscLinkRange[] | undefined): void {
+    this.restoredOscLinks = links?.slice() ?? []
+  }
+
   clearScrollback(): void {
+    this.restoredOscLinks = []
     this.terminal.clear()
   }
 

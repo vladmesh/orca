@@ -13,6 +13,7 @@ import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import type { Store } from '../persistence'
 import type {
+  AutomationWorkspaceProvenance,
   CreateWorktreeArgs,
   CreateWorktreeResult,
   GitPushTarget,
@@ -56,6 +57,10 @@ import type { SshGitProvider } from '../providers/ssh-git-provider'
 import { TUI_AGENT_CONFIG, isTuiAgent } from '../../shared/tui-agent-config'
 import { isWindowsAbsolutePathLike } from '../../shared/cross-platform-path'
 import { getSshGitUsername } from '../git/git-username'
+
+type CreateWorktreeArgsWithSystemProvenance = CreateWorktreeArgs & {
+  automationProvenance?: AutomationWorkspaceProvenance
+}
 import {
   sanitizeWorktreeName,
   sanitizeWorktreeDisplayName,
@@ -1341,7 +1346,7 @@ export function emitCreateWorktreeProgress(
 }
 
 export async function createRemoteWorktree(
-  args: CreateWorktreeArgs,
+  args: CreateWorktreeArgsWithSystemProvenance,
   repo: Repo,
   store: Store,
   mainWindow: BrowserWindow
@@ -1642,6 +1647,7 @@ export async function createRemoteWorktree(
     orcaCreatedAt: now,
     orcaCreationSource: 'ssh',
     orcaCreationWorkspaceLayout: getWorktreeCreationLayout(repo, settings),
+    ...(args.automationProvenance ? { automationProvenance: args.automationProvenance } : {}),
     baseRef: metadataBaseRef,
     ...(checkoutExistingBranch ? { preserveBranchOnDelete: true } : {}),
     ...(configuredPushTarget ? { pushTarget: configuredPushTarget } : {}),
@@ -1749,7 +1755,7 @@ export async function createRemoteWorktree(
 }
 
 export async function createLocalWorktree(
-  args: CreateWorktreeArgs,
+  args: CreateWorktreeArgsWithSystemProvenance,
   repo: Repo,
   store: Store,
   mainWindow: BrowserWindow,
@@ -2238,6 +2244,7 @@ export async function createLocalWorktree(
     orcaCreatedAt: now,
     orcaCreationSource: 'desktop',
     orcaCreationWorkspaceLayout: getWorktreeCreationLayout(repo, settings),
+    ...(args.automationProvenance ? { automationProvenance: args.automationProvenance } : {}),
     baseRef: metadataBaseRef,
     ...(checkoutExistingBranch ? { preserveBranchOnDelete: true } : {}),
     ...(configuredPushTarget ? { pushTarget: configuredPushTarget } : {}),

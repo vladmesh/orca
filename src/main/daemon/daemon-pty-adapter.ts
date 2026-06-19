@@ -24,6 +24,13 @@ import type { IPtyProvider, PtySpawnOptions, PtySpawnResult } from '../providers
 import { isShellProcess } from '../../shared/agent-detection'
 import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process-recognition'
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
+import type { TerminalOscLinkRange } from '../../shared/terminal-osc-link-ranges'
+
+type ColdRestorePayload = {
+  scrollback: string
+  cwd: string
+  oscLinks?: TerminalOscLinkRange[]
+}
 
 export type DaemonPtyAdapterOptions = {
   socketPath: string
@@ -73,7 +80,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
   // Why: React StrictMode double-mounts: mount → cold restore → unmount →
   // mount → ??? The sticky cache returns the same cold restore data on the
   // second mount until the renderer explicitly acknowledges it.
-  private coldRestoreCache = new Map<string, { scrollback: string; cwd: string }>()
+  private coldRestoreCache = new Map<string, ColdRestorePayload>()
   private sleepRestoreSessionIds = new Set<string>()
   private activeSessionIds = new Set<string>()
   private dirtySessionVersions = new Map<string, number>()
@@ -348,9 +355,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.killedSessionTombstones.delete(sessionId)
   }
 
-  private buildColdRestorePayload(
-    restoreInfo: ColdRestoreInfo
-  ): { scrollback: string; cwd: string } | null {
+  private buildColdRestorePayload(restoreInfo: ColdRestoreInfo): ColdRestorePayload | null {
     // Why: if the checkpoint was captured while an alternate-screen app
     // (vim, less, htop) was active, snapshotAnsi is the alt buffer content.
     // Replaying that into a fresh shell would show stale TUI content. Use
@@ -363,7 +368,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     if (!scrollback) {
       return null
     }
-    return { scrollback, cwd: restoreInfo.cwd }
+    return { scrollback, cwd: restoreInfo.cwd, oscLinks: restoreInfo.oscLinks }
   }
 
   async sendSignal(id: string, signal: string): Promise<void> {

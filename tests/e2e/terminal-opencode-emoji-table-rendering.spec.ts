@@ -10,6 +10,7 @@ import {
   waitForActiveTerminalManager,
   waitForTerminalOutput
 } from './helpers/terminal'
+import { waitForPtyShellEcho } from './terminal-pty-readiness'
 import {
   analyzeRasterCursorCells,
   type TerminalRasterProbeTarget
@@ -59,11 +60,20 @@ function emojiTableScript(marker: string): string {
   ].join('\r\n')
 
   return `
-process.stdout.write('\\x1b[?2026h\\x1b[?25l')
-process.stdout.write('\\x1b[2J\\x1b[H')
-process.stdout.write(${JSON.stringify(table)})
-process.stdout.write('\\r\\n${marker}\\r\\n')
-process.stdout.write('\\x1b[?25h\\x1b[?2026l')
+async function writeStdout(chunk) {
+  await new Promise((resolve) => {
+    process.stdout.write(chunk, resolve)
+  })
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => setTimeout(resolve, 8))
+  }
+}
+await writeStdout('\\x1b[?2026h\\x1b[?25l\\x1b[2J\\x1b[H')
+for (const line of ${JSON.stringify(table.split('\r\n'))}) {
+  await writeStdout(line + '\\r\\n')
+}
+await writeStdout('\\x1b[?25h\\x1b[?2026l')
+await writeStdout('${marker}\\r\\n')
 setTimeout(() => process.exit(0), 50)
 `
 }
@@ -254,6 +264,7 @@ test.describe('OpenCode emoji table terminal rendering', () => {
     await enableRiskyTerminalRendererPath(orcaPage)
 
     const ptyId = await waitForActivePanePtyId(orcaPage)
+    await waitForPtyShellEcho(orcaPage, ptyId, 20_000)
     const runId = randomUUID()
     const marker = `${EMOJI_TABLE_MARKER}_${runId}`
     const scriptPath = path.join(testRepoPath, `.orca-opencode-emoji-table-${runId}.mjs`)

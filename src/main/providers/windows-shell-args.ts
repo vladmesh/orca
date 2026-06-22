@@ -44,6 +44,13 @@ export type WindowsShellWslContext = {
   treatPosixCwdAsWsl?: boolean
 }
 
+const CODEX_HISTORY_DISABLED_BASH_BOOTSTRAP =
+  // Why: Codex applies later/subcommand -c overrides last; keep safety after user args.
+  'if [[ -n "${ORCA_CODEX_HOME:-}" ]]; then codex() { local -a _orca_codex_args; local _orca_codex_inserted=0; local _orca_codex_arg; export CODEX_HOME="${ORCA_CODEX_HOME}"; for _orca_codex_arg in "$@"; do if [[ "${_orca_codex_inserted}" == "0" && "${_orca_codex_arg}" == "--" ]]; then _orca_codex_args+=(-c \'history.persistence="none"\'); _orca_codex_inserted=1; fi; _orca_codex_args+=("${_orca_codex_arg}"); done; if [[ "${_orca_codex_inserted}" == "0" ]]; then _orca_codex_args+=(-c \'history.persistence="none"\'); fi; command codex "${_orca_codex_args[@]}"; }; export -f codex; fi'
+const CODEX_HISTORY_DISABLED_CMD_BOOTSTRAP =
+  // Why: Codex applies later/subcommand -c overrides last; keep safety after user args.
+  "if defined ORCA_CODEX_HOME doskey codex=powershell.exe -NoLogo -Command \"$$orcaCodexArgs=[System.Collections.Generic.List[string]]::new();$$orcaCodexInserted=$$false;foreach($$arg in $$args){if(-not $$orcaCodexInserted -and $$arg -eq '--'){[void]$$orcaCodexArgs.Add('-c');[void]$$orcaCodexArgs.Add('history.persistence=none');$$orcaCodexInserted=$$true};[void]$$orcaCodexArgs.Add($$arg)};if(-not $$orcaCodexInserted){[void]$$orcaCodexArgs.Add('-c');[void]$$orcaCodexArgs.Add('history.persistence=none')};$$env:CODEX_HOME=$$env:ORCA_CODEX_HOME;& codex @($$orcaCodexArgs.ToArray())\" $*"
+
 /**
  * Returns a startup command that is safe to embed in cmd.exe launch args.
  *
@@ -97,6 +104,7 @@ function buildWslShellArgs(linuxCwd: string, distro?: string): string[] {
   const setupCommand = [
     `cd ${quotePosixShell(linuxCwd)}`,
     'export PATH="$HOME/.local/bin:$PATH"',
+    CODEX_HISTORY_DISABLED_BASH_BOOTSTRAP,
     buildWslInteractiveLoginShellCommand()
   ].join(' && ')
   // Why: WSL users often customize zsh rather than bash; launch the distro's
@@ -125,13 +133,11 @@ export function resolveWindowsShellLaunchArgs(
 
   if (shellBasename === 'cmd.exe') {
     const shellArgStartupCommand = getCmdShellArgStartupCommand(startupCommand)
+    const setupCommand = shellArgStartupCommand
+      ? `${CMD_UTF8_SETUP_COMMAND} & ${CODEX_HISTORY_DISABLED_CMD_BOOTSTRAP} & ${shellArgStartupCommand}`
+      : `${CMD_UTF8_SETUP_COMMAND} & ${CODEX_HISTORY_DISABLED_CMD_BOOTSTRAP}`
     return {
-      shellArgs: [
-        '/K',
-        shellArgStartupCommand
-          ? `${CMD_UTF8_SETUP_COMMAND} & ${shellArgStartupCommand}`
-          : CMD_UTF8_SETUP_COMMAND
-      ],
+      shellArgs: ['/K', setupCommand],
       ...(shellArgStartupCommand ? { startupCommandDeliveredInShellArgs: true } : {}),
       effectiveCwd: cwd,
       validationCwd: cwd
@@ -154,7 +160,10 @@ export function resolveWindowsShellLaunchArgs(
 
   if (isWindowsGitBashShellPath(shellPath)) {
     return {
-      shellArgs: ['--login', '-i'],
+      shellArgs: [
+        '-c',
+        `${CODEX_HISTORY_DISABLED_BASH_BOOTSTRAP}; exec bash --login -i`
+      ],
       effectiveCwd: cwd,
       validationCwd: cwd
     }

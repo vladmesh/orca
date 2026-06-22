@@ -4425,7 +4425,12 @@ describe('registerPtyHandlers', () => {
 
       expect(spawnMock).toHaveBeenCalledWith(
         'C:\\Windows\\system32\\cmd.exe',
-        ['/K', 'chcp 65001 > nul'],
+        [
+          '/K',
+          expect.stringContaining(
+            'doskey codex=powershell.exe -NoLogo -Command'
+          )
+        ],
         expect.any(Object)
       )
     })
@@ -4487,7 +4492,7 @@ describe('registerPtyHandlers', () => {
 
       expect(spawnMock).toHaveBeenCalledWith(
         'C:\\Program Files\\Git\\bin\\bash.exe',
-        ['--login', '-i'],
+        ['-c', expect.stringContaining('history.persistence="none"')],
         expect.objectContaining({
           env: expect.objectContaining({ CHERE_INVOKING: '1' })
         })
@@ -4724,7 +4729,12 @@ describe('registerPtyHandlers', () => {
 
       expect(spawnMock).toHaveBeenCalledWith(
         'cmd.exe',
-        ['/K', 'chcp 65001 > nul'],
+        [
+          '/K',
+          expect.stringContaining(
+            'doskey codex=powershell.exe -NoLogo -Command'
+          )
+        ],
         expect.any(Object)
       )
     })

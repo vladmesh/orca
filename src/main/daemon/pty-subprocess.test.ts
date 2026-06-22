@@ -1264,7 +1264,12 @@ describe('createPtySubprocess', () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       'cmd.exe',
-      ['/K', 'chcp 65001 > nul'],
+      [
+        '/K',
+        expect.stringContaining(
+          'doskey codex=powershell.exe -NoLogo -Command'
+        )
+      ],
       expect.any(Object)
     )
   })
@@ -1351,7 +1356,7 @@ describe('createPtySubprocess', () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       'C:\\PortableGit\\bin\\bash.exe',
-      ['--login', '-i'],
+      ['-c', expect.stringContaining('history.persistence="none"')],
       expect.objectContaining({
         cwd: 'C:\\Users\\jin\\repo',
         env: expect.objectContaining({ CHERE_INVOKING: '1' })

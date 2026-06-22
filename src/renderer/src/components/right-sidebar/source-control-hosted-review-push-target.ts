@@ -1,11 +1,46 @@
 import type { GitPushTarget, GitUpstreamStatus } from '../../../../shared/types'
 import type { HostedReviewState } from '../../../../shared/hosted-review'
+import { getPublishTargetDisplayName } from '../../../../shared/git-publish-target-status'
 
 export function hasUsableHostedReviewPushTarget(args: {
   pushTarget?: GitPushTarget
   upstreamStatus?: GitUpstreamStatus
+  hasResolvableHostedReviewPushTargetLink?: boolean
 }): boolean {
-  return Boolean(args.pushTarget) || args.upstreamStatus?.hasConfiguredPushTarget === true
+  if (args.pushTarget) {
+    return (
+      args.upstreamStatus === undefined ||
+      args.upstreamStatus.upstreamName === getPublishTargetDisplayName(args.pushTarget)
+    )
+  }
+  if (args.hasResolvableHostedReviewPushTargetLink) {
+    // Why: a bare branch-config flag does not identify which review head it will
+    // push to; resolver-backed links need hydrated target metadata to prove it.
+    return false
+  }
+  return args.upstreamStatus?.hasConfiguredPushTarget === true
+}
+
+function isResolvableHostedReviewNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+export function hasPositiveHostedReviewNumberLink(args: {
+  linkedGitHubPR?: number | null
+  fallbackGitHubPR?: number | null
+  linkedGitLabMR?: number | null
+  linkedBitbucketPR?: number | null
+  linkedAzureDevOpsPR?: number | null
+  linkedGiteaPR?: number | null
+}): boolean {
+  return (
+    isResolvableHostedReviewNumber(args.linkedGitHubPR) ||
+    isResolvableHostedReviewNumber(args.fallbackGitHubPR) ||
+    isResolvableHostedReviewNumber(args.linkedGitLabMR) ||
+    isResolvableHostedReviewNumber(args.linkedBitbucketPR) ||
+    isResolvableHostedReviewNumber(args.linkedAzureDevOpsPR) ||
+    isResolvableHostedReviewNumber(args.linkedGiteaPR)
+  )
 }
 
 export function hasResolvableHostedReviewPushTargetLink(args: {
@@ -13,8 +48,8 @@ export function hasResolvableHostedReviewPushTargetLink(args: {
   linkedGitLabMR?: number | null
 }): boolean {
   return (
-    (typeof args.linkedGitHubPR === 'number' && Number.isFinite(args.linkedGitHubPR)) ||
-    (typeof args.linkedGitLabMR === 'number' && Number.isFinite(args.linkedGitLabMR))
+    isResolvableHostedReviewNumber(args.linkedGitHubPR) ||
+    isResolvableHostedReviewNumber(args.linkedGitLabMR)
   )
 }
 
@@ -29,7 +64,7 @@ export function resolveHostedReviewActionUpstreamStatus(args: {
   const hostedReviewMayStillNeedItsOwnTarget =
     // Why: SSH-backed linked reviews may not fetch live review state, but
     // their explicit link metadata still needs target-safe push behavior.
-    args.hasResolvableHostedReviewPushTargetLink ||
+    (args.hasResolvableHostedReviewPushTargetLink && !args.hostedReviewState) ||
     args.isHostedReviewStateLoading ||
     args.hostedReviewState === 'open' ||
     args.hostedReviewState === 'draft'

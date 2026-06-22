@@ -201,6 +201,7 @@ export const WorktreeSet = WorktreeSelector.extend({
       branchName: z.string(),
       remoteUrl: OptionalString
     })
+    .nullable()
     .optional(),
   diffComments: z.array(z.unknown()).optional(),
   mobileDiffReview: z.unknown().optional(),

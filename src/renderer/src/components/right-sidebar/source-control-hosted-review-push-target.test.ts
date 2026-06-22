@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  hasPositiveHostedReviewNumberLink,
   hasResolvableHostedReviewPushTargetLink,
   hasUsableHostedReviewPushTarget,
   resolveHostedReviewActionUpstreamStatus,
@@ -93,8 +94,21 @@ describe('resolveHostedReviewActionUpstreamStatus', () => {
     expect(
       resolveHostedReviewActionUpstreamStatus({
         hasHostedReviewLink: true,
-        hasResolvableHostedReviewPushTargetLink: false,
+        hasResolvableHostedReviewPushTargetLink: true,
         hostedReviewState: 'closed',
+        isHostedReviewStateLoading: false,
+        canUseHostedReviewPushTarget: false,
+        upstreamStatus: unrelatedUpstream
+      })
+    ).toBe(unrelatedUpstream)
+  })
+
+  it('does not alter status for merged reviews', () => {
+    expect(
+      resolveHostedReviewActionUpstreamStatus({
+        hasHostedReviewLink: true,
+        hasResolvableHostedReviewPushTargetLink: true,
+        hostedReviewState: 'merged',
         isHostedReviewStateLoading: false,
         canUseHostedReviewPushTarget: false,
         upstreamStatus: unrelatedUpstream
@@ -108,8 +122,23 @@ describe('hasResolvableHostedReviewPushTargetLink', () => {
     expect(hasResolvableHostedReviewPushTargetLink({ linkedGitHubPR: 12 })).toBe(true)
     expect(hasResolvableHostedReviewPushTargetLink({ linkedGitLabMR: 34 })).toBe(true)
     expect(hasResolvableHostedReviewPushTargetLink({ linkedGitHubPR: null })).toBe(false)
+    expect(hasResolvableHostedReviewPushTargetLink({ linkedGitHubPR: 0 })).toBe(false)
+    expect(hasResolvableHostedReviewPushTargetLink({ linkedGitLabMR: -1 })).toBe(false)
+    expect(hasResolvableHostedReviewPushTargetLink({ linkedGitLabMR: 1.5 })).toBe(false)
     expect(hasResolvableHostedReviewPushTargetLink({ linkedGitHubPR: Number.NaN })).toBe(false)
     expect(hasResolvableHostedReviewPushTargetLink({})).toBe(false)
+  })
+})
+
+describe('hasPositiveHostedReviewNumberLink', () => {
+  it('accepts positive hosted-review metadata and rejects invalid values', () => {
+    expect(hasPositiveHostedReviewNumberLink({ fallbackGitHubPR: 12 })).toBe(true)
+    expect(hasPositiveHostedReviewNumberLink({ linkedBitbucketPR: 34 })).toBe(true)
+    expect(hasPositiveHostedReviewNumberLink({ linkedAzureDevOpsPR: 56 })).toBe(true)
+    expect(hasPositiveHostedReviewNumberLink({ linkedGiteaPR: 78 })).toBe(true)
+    expect(hasPositiveHostedReviewNumberLink({ linkedGitHubPR: 0, linkedGitLabMR: -1 })).toBe(false)
+    expect(hasPositiveHostedReviewNumberLink({ linkedGitHubPR: Number.NaN })).toBe(false)
+    expect(hasPositiveHostedReviewNumberLink({})).toBe(false)
   })
 })
 
@@ -157,9 +186,27 @@ describe('hasUsableHostedReviewPushTarget', () => {
     ).toBe(true)
     expect(
       hasUsableHostedReviewPushTarget({
+        pushTarget: { remoteName: 'fork', branchName: 'feature' },
+        upstreamStatus: { hasUpstream: true, upstreamName: 'fork/feature', ahead: 1, behind: 0 }
+      })
+    ).toBe(true)
+    expect(
+      hasUsableHostedReviewPushTarget({
         upstreamStatus: { hasUpstream: false, ahead: 0, behind: 0, hasConfiguredPushTarget: true }
       })
     ).toBe(true)
+    expect(
+      hasUsableHostedReviewPushTarget({
+        hasResolvableHostedReviewPushTargetLink: true,
+        upstreamStatus: { hasUpstream: false, ahead: 0, behind: 0, hasConfiguredPushTarget: true }
+      })
+    ).toBe(false)
+    expect(
+      hasUsableHostedReviewPushTarget({
+        pushTarget: { remoteName: 'fork', branchName: 'feature' },
+        upstreamStatus: unrelatedUpstream
+      })
+    ).toBe(false)
     expect(hasUsableHostedReviewPushTarget({ upstreamStatus: unrelatedUpstream })).toBe(false)
   })
 })

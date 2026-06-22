@@ -253,6 +253,7 @@ import {
   SourceControlHeaderToolbar
 } from './source-control-header-toolbar'
 import {
+  hasPositiveHostedReviewNumberLink,
   hasResolvableHostedReviewPushTargetLink,
   hasUsableHostedReviewPushTarget,
   resolveHostedReviewActionUpstreamStatus,
@@ -1416,12 +1417,14 @@ function SourceControlInner(): React.JSX.Element {
     linkedGitLabMR,
     linkedGiteaPR
   ])
-  const hasHostedReviewLink =
-    (linkedGitHubPR ?? fallbackGitHubPRNumber) !== null ||
-    linkedGitLabMR !== null ||
-    linkedBitbucketPR !== null ||
-    linkedAzureDevOpsPR !== null ||
-    linkedGiteaPR !== null
+  const hasHostedReviewLink = hasPositiveHostedReviewNumberLink({
+    linkedGitHubPR,
+    fallbackGitHubPR: fallbackGitHubPRNumber,
+    linkedGitLabMR,
+    linkedBitbucketPR,
+    linkedAzureDevOpsPR,
+    linkedGiteaPR
+  })
   // Why: when activeRepo.connectionId is truthy, neither the SourceControl
   // effect below nor WorktreeCard.tsx fetches hostedReview for this branch,
   // so hostedReviewEntry would stay undefined forever and would permanently
@@ -1456,7 +1459,8 @@ function SourceControlInner(): React.JSX.Element {
   ])
   const canUseHostedReviewPushTarget = hasUsableHostedReviewPushTarget({
     pushTarget: activeWorktree?.pushTarget,
-    upstreamStatus: remoteStatus
+    upstreamStatus: remoteStatus,
+    hasResolvableHostedReviewPushTargetLink: hasResolvableReviewPushTargetLink
   })
   const hostedReviewStateForActions = resolveHostedReviewStateForActions({
     hostedReviewState: hostedReview?.state ?? null,

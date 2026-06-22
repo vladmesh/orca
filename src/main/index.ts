@@ -9,6 +9,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { electronApp, is } from '@electron-toolkit/utils'
 import * as QRCode from 'qrcode'
 import { Store, initDataPath } from './persistence'
+import { shouldEmitManagedAgentSkillFallback } from '../shared/skills'
 import { applyAppIcon } from './app-icon'
 import { StatsCollector, initStatsPath } from './stats/collector'
 import { ClaudeUsageStore, initClaudeUsagePath } from './claude-usage/store'
@@ -1643,7 +1644,7 @@ app.whenReady().then(async () => {
         ...(remoteRuntime ? { remoteRuntime } : {}),
         ...(!remoteRuntime && discoveryTarget ? { discoveryTarget } : {})
       })
-      if (result.status === 'fallback') {
+      if (result.status === 'fallback' && shouldEmitManagedAgentSkillFallback(result)) {
         sendManagedSkillFallback(result)
       } else if (result.status === 'updated') {
         sendManagedSkillUpdated(result)

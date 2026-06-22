@@ -5,6 +5,8 @@ export function isDiscoveredManagedSkill(
   skill: DiscoveredSkill,
   skillName: ManagedAgentSkillName
 ): boolean {
+  // Why: frontmatter names can be display labels, while the folder basename is
+  // the install identity used by the skills CLI.
   const expected = normalizeSkillName(skillName)
   return (
     normalizeSkillName(skill.name) === expected ||

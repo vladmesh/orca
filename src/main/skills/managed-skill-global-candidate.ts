@@ -68,7 +68,7 @@ export function selectSingleGlobalManagedSkillCandidate(args: {
       fallback: { reason: 'project-install', scope: 'project' }
     }
   }
-  if (bundledOrPluginCandidates.length > 0 || homeCandidates.length !== 1) {
+  if (bundledOrPluginCandidates.length > 0) {
     return {
       status: 'fallback',
       fallback: {
@@ -80,6 +80,12 @@ export function selectSingleGlobalManagedSkillCandidate(args: {
               ? 'bundled'
               : 'global'
       }
+    }
+  }
+  if (homeCandidates.length !== 1) {
+    return {
+      status: 'fallback',
+      fallback: { reason: 'ambiguous-install', scope: 'global' }
     }
   }
 

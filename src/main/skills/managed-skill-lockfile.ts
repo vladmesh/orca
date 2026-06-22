@@ -10,6 +10,7 @@ type ManagedSkillLockEntry = {
   skillFolderHash?: unknown
 }
 
+// Why: managed-skill readiness validation currently trusts lockfile schema v3 only.
 const SUPPORTED_LOCKFILE_SCHEMA_VERSION = 3
 
 export async function readManagedSkillLockEntry(args: {
@@ -43,6 +44,7 @@ export async function readManagedSkillLockEntry(args: {
   if (!entry) {
     return { ok: false, reason: 'lock-entry-missing' }
   }
+  // Why: only trust lock entries tied to Orca-managed source and canonical skill path.
   if (!isManagedLockEntryForSkill(entry, args.skillName)) {
     return { ok: false, reason: 'lock-entry-unmanaged-source' }
   }

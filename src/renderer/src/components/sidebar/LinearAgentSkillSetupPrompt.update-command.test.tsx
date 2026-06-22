@@ -7,6 +7,10 @@ import type { CliInstallStatus } from '../../../../shared/cli-install-types'
 import type { DiscoveredSkill } from '../../../../shared/skills'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  LINEAR_TICKETS_SKILL_UPDATE_COMMAND,
+  ORCA_LINEAR_SKILL_UPDATE_COMMAND
+} from '@/lib/agent-feature-install-commands'
+import {
   LinearAgentSkillSetupPrompt,
   _linearAgentSkillSetupPromptInternalsForTests
 } from './LinearAgentSkillSetupPrompt'
@@ -156,7 +160,7 @@ describe('LinearAgentSkillSetupPrompt update command', () => {
     await renderPrompt()
 
     expect(mocks.panelProps.at(-1)).toEqual(
-      expect.objectContaining({ installedCommand: 'npx skills update orca-linear --global' })
+      expect.objectContaining({ installedCommand: ORCA_LINEAR_SKILL_UPDATE_COMMAND })
     )
   })
 
@@ -166,7 +170,7 @@ describe('LinearAgentSkillSetupPrompt update command', () => {
     await renderPrompt()
 
     expect(mocks.panelProps.at(-1)).toEqual(
-      expect.objectContaining({ installedCommand: 'npx skills update linear-tickets --global' })
+      expect.objectContaining({ installedCommand: LINEAR_TICKETS_SKILL_UPDATE_COMMAND })
     )
   })
 
@@ -176,7 +180,7 @@ describe('LinearAgentSkillSetupPrompt update command', () => {
     await renderPrompt()
 
     expect(mocks.panelProps.at(-1)).toEqual(
-      expect.objectContaining({ installedCommand: 'npx skills update orca-linear --global' })
+      expect.objectContaining({ installedCommand: ORCA_LINEAR_SKILL_UPDATE_COMMAND })
     )
   })
 })

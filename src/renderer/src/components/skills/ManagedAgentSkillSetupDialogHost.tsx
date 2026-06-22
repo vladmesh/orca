@@ -91,22 +91,42 @@ export function ManagedAgentSkillSetupDialogHost(): React.JSX.Element | null {
   )
 
   const recheck = useCallback(async (): Promise<void> => {
-    if (!active) {
+    if (!active || rechecking) {
       return
     }
+    const recheckUiKey = active.uiKey
     setRechecking(true)
     try {
       const result = await window.api.skills.ensureManagedReady({ ...active.request, force: true })
       if (result.status === 'fallback') {
-        setDialogState((current) => replaceActiveAfterManagedAgentSkillRecheck(current, result))
+        setDialogState((current) => {
+          if (current.active?.uiKey !== recheckUiKey) {
+            return current
+          }
+          const previousKey = current.active.uiKey
+          const next = replaceActiveAfterManagedAgentSkillRecheck(current, result)
+          if (next.active?.uiKey !== previousKey) {
+            queuedKeysRef.current.delete(previousKey)
+            if (next.active) {
+              queuedKeysRef.current.add(next.active.uiKey)
+            }
+          }
+          return next
+        })
         return
       }
+      setDialogState((current) => {
+        if (current.active?.uiKey !== recheckUiKey) {
+          return current
+        }
+        queuedKeysRef.current.delete(recheckUiKey)
+        return advanceManagedAgentSkillFallbackQueue(current)
+      })
       notifyInstalledAgentSkillsChanged()
-      advanceQueue()
     } finally {
       setRechecking(false)
     }
-  }, [active, advanceQueue])
+  }, [active, rechecking])
 
   if (!active) {
     return null
@@ -188,7 +208,13 @@ export function ManagedAgentSkillSetupDialogHost(): React.JSX.Element | null {
           />
         ) : (
           <div className="px-6 pt-4 pb-3">
-            <Button type="button" variant="outline" size="sm" onClick={() => void recheck()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => void recheck()}
+            >
               <RefreshCw className={loading ? 'size-3.5 animate-spin' : 'size-3.5'} />
               {translate(
                 'auto.components.skills.ManagedAgentSkillSetupDialogHost.recheck',

@@ -11,6 +11,7 @@ export function buildAgentFeatureSkillInstallCommand(skillNames: readonly string
   if (skillNames.length === 0) {
     throw new Error('At least one skill name is required.')
   }
+  // Why: keep setup commands fully non-interactive in both npx and skills layers.
   return `npx --yes skills add ${ORCA_SKILLS_REPOSITORY_URL} --skill ${skillNames.join(' ')} --global --yes`
 }
 
@@ -19,6 +20,7 @@ export function buildAgentFeatureSkillUpdateCommand(skillName: string): string {
   if (!trimmedSkillName) {
     throw new Error('A skill name is required.')
   }
+  // Why: keep setup commands fully non-interactive in both npx and skills layers.
   return `npx --yes skills update ${trimmedSkillName} --global --yes`
 }
 

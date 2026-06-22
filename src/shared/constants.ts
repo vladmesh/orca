@@ -313,6 +313,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     agentDefaultEnv: { ...DEFAULT_TUI_AGENT_ENV },
     agentYoloDefaultsMigrated: true,
     agentStatusHooksEnabled: true,
+    // Why: keep managed skill readiness proactive; users can opt out in Agents settings.
     managedAgentSkillBackgroundUpdatesEnabled: true,
     tabAutoGenerateTitle: false,
     confirmClosePinnedTab: true,

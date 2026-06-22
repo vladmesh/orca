@@ -95,7 +95,7 @@ export async function discoverInstalledAgentSkills(
 
   const inFlightDiscovery = pendingDiscoveryByTarget.get(key)
   if (inFlightDiscovery) {
-    if (!force || pendingDiscoverySatisfiesForcedRefreshByTarget.get(key)) {
+    if (!force) {
       return inFlightDiscovery
     }
     try {

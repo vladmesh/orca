@@ -2312,6 +2312,7 @@ function createSkillsApi(): NonNullable<Partial<PreloadApi>['skills']> {
         scannedAt: Date.now()
       })),
     ensureManagedReady: (request: ManagedAgentSkillEnsureRequest) => {
+      // Why: web clients cannot inspect or mutate trusted host skill installs.
       const uiKey = ['remote', '', request.skillName, request.context].join(':')
       const cooldownUntil = cooldownUntilByKey.get(uiKey)
       if (!request.force && cooldownUntil && cooldownUntil > Date.now()) {

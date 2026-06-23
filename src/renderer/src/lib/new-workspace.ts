@@ -319,6 +319,8 @@ async function deliverAgentStartupToTerminal(
       ptyId,
       content: draftPrompt,
       agent: startup.agent,
+      // Why: startup.draftPrompt is only attached after native draft launch
+      // planning is unavailable, so this paste is the first delivery attempt.
       forcePaste: true
     })
   }
@@ -326,6 +328,8 @@ async function deliverAgentStartupToTerminal(
 
 function ensureStartupLaunchToken(startup: AgentStartupPlan): string {
   if (!startup.launchToken) {
+    // Why: delayed delivery retries must reuse the startup plan's launch token
+    // so they match the pane launch registration for this agent.
     startup.launchToken = createBrowserUuid()
   }
   return startup.launchToken

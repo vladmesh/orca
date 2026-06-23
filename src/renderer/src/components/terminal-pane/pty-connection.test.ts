@@ -4077,7 +4077,7 @@ describe('connectPanePty', () => {
       }
     } as StoreState
 
-    connectPanePty(
+    const binding = connectPanePty(
       createPane(1) as never,
       createManager(1) as never,
       createDeps({
@@ -4089,16 +4089,26 @@ describe('connectPanePty', () => {
         }
       }) as never
     )
-    await flushAsyncTicks(20)
-    await new Promise((resolve) => setTimeout(resolve, 70))
+    try {
+      await flushAsyncTicks(20)
+      await new Promise((resolve) => setTimeout(resolve, 70))
 
-    expect(mockStoreState.registerAgentLaunchConfig).toHaveBeenCalledWith(paneKey, launchConfig, {
-      agentType: 'codex',
-      launchToken: 'launch-token-1',
-      tabId: 'tab-1',
-      leafId: LEAF_1
-    })
-    expect(mockStoreState.clearAgentLaunchConfig).toHaveBeenCalledWith(paneKey)
+      expect(mockStoreState.registerAgentLaunchConfig).toHaveBeenCalledWith(paneKey, launchConfig, {
+        agentType: 'codex',
+        launchToken: 'launch-token-1',
+        tabId: 'tab-1',
+        leafId: LEAF_1
+      })
+      expect(mockStoreState.clearAgentLaunchConfig).toHaveBeenCalledWith(paneKey)
+
+      const registerOrder = mockStoreState.registerAgentLaunchConfig.mock.invocationCallOrder[0]
+      const clearOrder = mockStoreState.clearAgentLaunchConfig.mock.invocationCallOrder[0]
+      expect(registerOrder).toBeDefined()
+      expect(clearOrder).toBeDefined()
+      expect(registerOrder!).toBeLessThan(clearOrder!)
+    } finally {
+      binding.dispose()
+    }
   })
 
   it('prefers live-entry launch config for pane cold restore when status survived PTY loss', async () => {

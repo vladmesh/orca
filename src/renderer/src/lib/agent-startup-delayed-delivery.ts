@@ -166,7 +166,9 @@ function flushPendingAgentStartupDeliveries(): void {
     // owns success or failure. Consume before awaiting so store churn cannot
     // duplicate a linked-work-item draft.
     if (beginAgentStartupDeliveryAttempt(delivery)) {
-      void delivery.deliver(tabId, ptyId, delivery.startup)
+      void delivery.deliver(tabId, ptyId, delivery.startup).catch((error) => {
+        console.warn('Queued agent startup delivery failed', error)
+      })
     }
   }
   stopPendingAgentStartupSubscriptionIfIdle()

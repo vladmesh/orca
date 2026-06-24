@@ -132,6 +132,15 @@ describe('parseAnyWorktreeId', () => {
       worktreePath: '/abs/path'
     })
   })
+
+  it('rejects malformed canonical-looking ids instead of parsing them as legacy', () => {
+    expect(
+      parseAnyWorktreeId('orca-worktree://v1?hostId=bogus&repoId=repo::x&path=%2Fy')
+    ).toBeNull()
+    expect(
+      parseAnyWorktreeId('orca-worktree://v2?hostId=local&repoId=repo::x&path=%2Fy')
+    ).toBeNull()
+  })
 })
 
 describe('isLegacyWorktreeId', () => {
@@ -143,6 +152,12 @@ describe('isLegacyWorktreeId', () => {
       )
     ).toBe(false)
     expect(isLegacyWorktreeId('repo-123')).toBe(false)
+    expect(isLegacyWorktreeId('orca-worktree://v1?hostId=bogus&repoId=repo::x&path=%2Fy')).toBe(
+      false
+    )
+    expect(isLegacyWorktreeId('orca-worktree://v2?hostId=local&repoId=repo::x&path=%2Fy')).toBe(
+      false
+    )
   })
 })
 
@@ -162,6 +177,11 @@ describe('splitWorktreeId', () => {
 
   it('returns null when there is no separator', () => {
     expect(splitWorktreeId('just-a-repo-id')).toBeNull()
+  })
+
+  it('rejects malformed canonical-looking ids instead of splitting on legacy separators', () => {
+    expect(splitWorktreeId('orca-worktree://v1?hostId=bogus&repoId=repo::x&path=%2Fy')).toBeNull()
+    expect(splitWorktreeId('orca-worktree://v2?hostId=local&repoId=repo::x&path=%2Fy')).toBeNull()
   })
 
   it('returns null for an empty input', () => {

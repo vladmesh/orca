@@ -15,7 +15,8 @@ import { normalizeExecutionHostId } from './execution-host'
 
 export const PTY_SESSION_ID_SEPARATOR = '@@'
 export const WORKTREE_ID_SEPARATOR = '::'
-const WORKTREE_KEY_PREFIX = 'orca-worktree://v1?'
+const WORKTREE_KEY_SCHEME = 'orca-worktree://'
+const WORKTREE_KEY_PREFIX = `${WORKTREE_KEY_SCHEME}v1?`
 
 function isCanonicalWorktreeKey(candidate: string): boolean {
   if (!candidate.startsWith(WORKTREE_KEY_PREFIX)) {
@@ -55,6 +56,9 @@ export function parsePtySessionId(sessionId: string): { worktreeId: string | nul
   const candidate = sessionId.slice(0, idx)
   if (isCanonicalWorktreeKey(candidate)) {
     return { worktreeId: candidate }
+  }
+  if (candidate.startsWith(WORKTREE_KEY_SCHEME)) {
+    return { worktreeId: null }
   }
   // Why: require non-empty halves on both sides of `::` so degenerate
   // ids like `::@@…`, `repo::@@…`, or `::path@@…` don't synthesize a

@@ -798,9 +798,14 @@ async function listWorktreesForSpaceScan(
   }
 }
 
-function mergeForSpaceScan(repo: Repo, gitWorktree: GitWorktreeInfo, store: Store): Worktree {
+function mergeForSpaceScan(
+  repo: Repo,
+  repos: Repo[],
+  gitWorktree: GitWorktreeInfo,
+  store: Store
+): Worktree {
   const worktreeId = makeRepoWorktreeKey(repo, gitWorktree.path)
-  const meta = getWorktreeMetaForSpaceScan(repo, gitWorktree.path, store, worktreeId)
+  const meta = getWorktreeMetaForSpaceScan(repo, repos, gitWorktree.path, store, worktreeId)
   return mergeWorktree(repo.id, gitWorktree, meta, repo.displayName, {
     hostId: getRepoExecutionHostId(repo)
   })
@@ -808,6 +813,7 @@ function mergeForSpaceScan(repo: Repo, gitWorktree: GitWorktreeInfo, store: Stor
 
 function getWorktreeMetaForSpaceScan(
   repo: Repo,
+  repos: Repo[],
   worktreePath: string,
   store: Store,
   canonicalId: string
@@ -827,11 +833,23 @@ function getWorktreeMetaForSpaceScan(
   if (legacyMeta.hostId !== undefined && legacyMeta.hostId !== repoHostId) {
     return undefined
   }
+  if (legacyMeta.hostId === undefined && hasAmbiguousRepoHostForSpaceScan(repos, repo)) {
+    return undefined
+  }
 
   // Why: space scans are read-heavy, but a safe legacy hit should be upgraded
   // so future scans do not depend on the unqualified repoId::path key.
   store.migrateWorktreeIdentity(legacyId, canonicalId)
   return store.getWorktreeMeta(canonicalId) ?? legacyMeta
+}
+
+function hasAmbiguousRepoHostForSpaceScan(repos: Repo[], repo: Repo): boolean {
+  const hostIds = new Set(
+    repos
+      .filter((candidateRepo) => candidateRepo.id === repo.id)
+      .map((candidateRepo) => getRepoExecutionHostId(candidateRepo))
+  )
+  return hostIds.size > 1
 }
 
 function reportProgress(
@@ -845,6 +863,7 @@ function reportProgress(
 
 async function scanRepo(
   repo: Repo,
+  repos: Repo[],
   scannedAt: number,
   store: Store,
   progress: WorkspaceSpaceProgressState,
@@ -884,7 +903,7 @@ async function scanRepo(
   }
 
   const worktrees = listed.worktrees.map((gitWorktree) =>
-    mergeForSpaceScan(repo, gitWorktree, store)
+    mergeForSpaceScan(repo, repos, gitWorktree, store)
   )
   reportProgress(
     progress,
@@ -968,7 +987,7 @@ export async function analyzeWorkspaceSpace(
   }
   options.onProgress?.({ ...progress })
   const repoResults = await mapLimit(reposToScan, 2, (repo) =>
-    scanRepo(repo, scannedAt, store, progress, options)
+    scanRepo(repo, reposToScan, scannedAt, store, progress, options)
   )
   throwIfAborted(options.signal)
   const repos = repoResults.map((result) => result.summary)

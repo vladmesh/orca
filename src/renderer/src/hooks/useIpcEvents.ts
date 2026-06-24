@@ -21,6 +21,7 @@ import { nextEditorFontZoomLevel, computeEditorFontSize } from '@/lib/editor-fon
 import type {
   TerminalLayoutSnapshot,
   TerminalPaneLayoutNode,
+  Repo,
   UpdateStatus,
   WorkspaceSessionState
 } from '../../../shared/types'
@@ -779,7 +780,19 @@ export function getRuntimeProjectRefreshEnvironmentIds(args: {
   ]
 }
 
-async function refreshRuntimeProjectWorktrees(repos: readonly { id: string }[]): Promise<void> {
+type RepoHostIdentity = Pick<Repo, 'id' | 'connectionId' | 'executionHostId'>
+
+function worktreeBelongsToRepoHost(
+  worktree: { repoId: string; hostId?: ExecutionHostId },
+  repo: RepoHostIdentity
+): boolean {
+  return (
+    worktree.repoId === repo.id &&
+    (worktree.hostId ?? LOCAL_EXECUTION_HOST_ID) === getRepoExecutionHostId(repo)
+  )
+}
+
+async function refreshRuntimeProjectWorktrees(repos: readonly RepoHostIdentity[]): Promise<void> {
   let nextIndex = 0
   const failures: { repoId: string; error: unknown }[] = []
   const workerCount = Math.min(RUNTIME_PROJECT_REFRESH_CONCURRENCY, repos.length)
@@ -791,9 +804,12 @@ async function refreshRuntimeProjectWorktrees(repos: readonly { id: string }[]):
       while (nextIndex < repos.length) {
         const index = nextIndex
         nextIndex += 1
-        const repoId = repos[index].id
+        const repo = repos[index]
+        const repoId = repo.id
         try {
-          await useAppStore.getState().fetchWorktrees(repoId)
+          await useAppStore.getState().fetchWorktrees(repoId, {
+            ownerHostId: getRepoExecutionHostId(repo)
+          })
         } catch (error) {
           failures.push({ repoId, error })
         }
@@ -2536,7 +2552,9 @@ export function useIpcEvents(): void {
         const remoteWorktreeIds = new Set(
           Object.values(store.worktreesByRepo)
             .flat()
-            .filter((w) => remoteRepos.some((r) => r.id === w.repoId))
+            .filter((worktree) =>
+              remoteRepos.some((repo) => worktreeBelongsToRepoHost(worktree, repo))
+            )
             .map((w) => w.id)
         )
         for (const worktreeId of remoteWorktreeIds) {
@@ -2560,10 +2578,11 @@ export function useIpcEvents(): void {
           // start) sit inert. Bumping generation forces TerminalPane to remount
           // and retry pty:spawn. Only bump tabs with no live ptyId.
           const freshStore = useAppStore.getState()
-          const remoteRepoIds = new Set(remoteRepos.map((r) => r.id))
           const worktreeIds = Object.values(freshStore.worktreesByRepo)
             .flat()
-            .filter((w) => remoteRepoIds.has(w.repoId))
+            .filter((worktree) =>
+              remoteRepos.some((repo) => worktreeBelongsToRepoHost(worktree, repo))
+            )
             .map((w) => w.id)
 
           for (const worktreeId of worktreeIds) {

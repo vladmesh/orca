@@ -37,6 +37,7 @@ import {
 } from '../shared/constants'
 import { folderWorkspaceKey, worktreeWorkspaceKey } from '../shared/workspace-scope'
 import { toRuntimeExecutionHostId, toSshExecutionHostId } from '../shared/execution-host'
+import { makeRepoWorktreeKey } from '../shared/worktree-id'
 import { SshConnectionStore } from './ssh/ssh-connection-store'
 import { setSourceControlActionDefault } from '../shared/source-control-ai-actions'
 
@@ -2787,6 +2788,37 @@ describe('Store', () => {
     expect(store.getWorktreeMeta('r2::/other')!.displayName).toBe('other')
   })
 
+  it('removeProject deletes canonical worktree metadata and lineage for the repo', async () => {
+    const store = await createStore()
+    const repo = makeRepo({ id: 'r1' })
+    const otherRepo = makeRepo({ id: 'r2', path: '/repo2' })
+    const childId = makeRepoWorktreeKey(repo, '/path/child')
+    const parentId = makeRepoWorktreeKey(repo, '/path/parent')
+    const otherId = makeRepoWorktreeKey(otherRepo, '/other')
+    store.addRepo(repo)
+    store.addRepo(otherRepo)
+
+    store.setWorktreeMeta(childId, { displayName: 'child' })
+    store.setWorktreeMeta(otherId, { displayName: 'other' })
+    store.setWorktreeLineage(
+      childId,
+      makeWorktreeLineage({ worktreeId: childId, parentWorktreeId: parentId })
+    )
+    store.setWorkspaceLineage(
+      makeWorkspaceLineage({
+        childWorkspaceKey: worktreeWorkspaceKey(childId),
+        parentWorkspaceKey: worktreeWorkspaceKey(parentId)
+      })
+    )
+
+    store.removeProject('r1')
+
+    expect(store.getWorktreeMeta(childId)).toBeUndefined()
+    expect(store.getWorktreeLineage(childId)).toBeUndefined()
+    expect(store.getWorkspaceLineage(worktreeWorkspaceKey(childId))).toBeUndefined()
+    expect(store.getWorktreeMeta(otherId)?.displayName).toBe('other')
+  })
+
   it('removeProject removes the derived project host setup compatibility record', async () => {
     const store = await createStore()
     store.addRepo(makeRepo({ id: 'r1' }))
@@ -3091,6 +3123,39 @@ describe('Store', () => {
     })
   })
 
+  it('updates same-id repo-backed project host setup metadata on the requested host', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'same-repo', displayName: 'Local Repo' }))
+    store.addRepo(
+      makeRepo({
+        id: 'same-repo',
+        path: '/remote/repo',
+        displayName: 'Remote Repo',
+        connectionId: 'gpu-vm'
+      })
+    )
+
+    const result = store.updateProjectHostSetup({
+      setupId: 'same-repo',
+      hostId: 'ssh:gpu-vm',
+      updates: { displayName: 'Remote Renamed' }
+    })
+
+    expect(result?.repo).toMatchObject({
+      id: 'same-repo',
+      displayName: 'Remote Renamed',
+      connectionId: 'gpu-vm'
+    })
+    expect(store.getRepos()).toEqual([
+      expect.objectContaining({ id: 'same-repo', displayName: 'Local Repo' }),
+      expect.objectContaining({
+        id: 'same-repo',
+        displayName: 'Remote Renamed',
+        connectionId: 'gpu-vm'
+      })
+    ])
+  })
+
   it('rejects repo-backed project host setup path changes', async () => {
     const store = await createStore()
     store.addRepo(makeRepo({ id: 'r1', path: '/repo' }))
@@ -3178,6 +3243,51 @@ describe('Store', () => {
     expect(store.getProjects()).toEqual([])
     expect(store.getProjectHostSetups()).toEqual([])
     expect(store.getWorktreeMeta('r1::/path/wt1')).toBeUndefined()
+  })
+
+  it('deletes only the same-id repo-backed project host setup on the requested host', async () => {
+    const store = await createStore()
+    const localRepo = makeRepo({ id: 'same-repo', path: '/local/repo', displayName: 'Local Repo' })
+    const remoteRepo = makeRepo({
+      id: 'same-repo',
+      path: '/remote/repo',
+      displayName: 'Remote Repo',
+      connectionId: 'gpu-vm'
+    })
+    const localWorktreeId = makeRepoWorktreeKey(localRepo, '/local/worktree')
+    const remoteWorktreeId = makeRepoWorktreeKey(remoteRepo, '/remote/worktree')
+    const hostStampedLegacyWorktreeId = 'same-repo::/remote/legacy'
+    const hostlessLegacyWorktreeId = 'same-repo::/ambiguous/legacy'
+    store.addRepo(localRepo)
+    store.addRepo(remoteRepo)
+    store.setWorktreeMeta(localWorktreeId, { displayName: 'local' })
+    store.setWorktreeMeta(remoteWorktreeId, { displayName: 'remote' })
+    store.setWorktreeMeta(hostStampedLegacyWorktreeId, {
+      displayName: 'remote legacy',
+      hostId: 'ssh:gpu-vm'
+    })
+    store.setWorktreeMeta(hostlessLegacyWorktreeId, { displayName: 'hostless legacy' })
+
+    const result = store.deleteProjectHostSetup({
+      setupId: 'same-repo',
+      hostId: 'ssh:gpu-vm'
+    })
+
+    expect(result?.repo).toMatchObject({
+      id: 'same-repo',
+      path: '/remote/repo',
+      connectionId: 'gpu-vm'
+    })
+    expect(store.getRepos()).toEqual([
+      expect.objectContaining({ id: 'same-repo', path: '/local/repo' })
+    ])
+    expect(store.getProjectHostSetups()).toEqual([
+      expect.objectContaining({ id: 'same-repo', hostId: 'local' })
+    ])
+    expect(store.getWorktreeMeta(remoteWorktreeId)).toBeUndefined()
+    expect(store.getWorktreeMeta(hostStampedLegacyWorktreeId)).toBeUndefined()
+    expect(store.getWorktreeMeta(localWorktreeId)?.displayName).toBe('local')
+    expect(store.getWorktreeMeta(hostlessLegacyWorktreeId)?.displayName).toBe('hostless legacy')
   })
 
   it('updateRepo preserves repo-backed project host setup method', async () => {

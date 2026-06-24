@@ -1202,6 +1202,7 @@ async function isRuntimeWorktreePathMissing(
 type RuntimeWorktreeRemovalTarget = {
   id: string
   repoId: string
+  hostId?: string
   path: string
   pushTarget?: GitPushTarget
 }
@@ -1374,6 +1375,13 @@ function findRuntimeRepoForParsedWorktree(
   return matchingHostIds.size === 1 ? matchingRepos[0] : undefined
 }
 
+function findRuntimeRepoForRemovalTarget(
+  store: RuntimeStore,
+  target: RuntimeWorktreeRemovalTarget
+): Repo | undefined {
+  return findRuntimeRepoForParsedWorktree(store.getRepos(), target)
+}
+
 function isRuntimeWorktreeIdAliasForResolved(
   worktree: Pick<ResolvedWorktree, 'id' | 'repoId' | 'path' | 'hostId'>,
   worktreeId: string
@@ -1506,6 +1514,7 @@ function parseExactWorktreeIdSelector(selector: string): RuntimeWorktreeRemovalT
   return {
     id: worktreeId,
     repoId: parsed.repoId,
+    ...(parsed.hostId !== undefined ? { hostId: parsed.hostId } : {}),
     path: parsed.worktreePath
   }
 }
@@ -14041,6 +14050,7 @@ export class OrcaRuntimeService {
       const removalTarget = {
         id: worktree.id,
         repoId: worktree.repoId,
+        ...(worktree.hostId !== undefined ? { hostId: worktree.hostId } : {}),
         path: worktree.path
       }
       return worktree.pushTarget
@@ -14132,7 +14142,9 @@ export class OrcaRuntimeService {
       throw new Error('runtime_unavailable')
     }
     const removalTarget = parseExactWorktreeIdSelector(worktreeSelector)
-    const repo = removalTarget ? this.store.getRepo(removalTarget.repoId) : undefined
+    const repo = removalTarget
+      ? findRuntimeRepoForRemovalTarget(this.store, removalTarget)
+      : undefined
     const canonicalRemovalTargetId =
       removalTarget && repo ? getRuntimeRepoWorktreeId(repo, removalTarget.path) : undefined
     const cleanupTarget = removalTarget
@@ -14217,7 +14229,7 @@ export class OrcaRuntimeService {
     // Why: runtime callers can race the same workspace through CLI/mobile
     // retries. Share one destructive Git/filesystem operation per worktree ID.
     const removal = (async (): Promise<RemoveWorktreeResult & { warning?: string }> => {
-      const repo = store.getRepo(removalTarget.repoId)
+      const repo = findRuntimeRepoForRemovalTarget(store, removalTarget)
       if (!repo) {
         throw new Error('repo_not_found')
       }

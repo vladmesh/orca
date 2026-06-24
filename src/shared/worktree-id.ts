@@ -25,7 +25,8 @@ export type ParsedAnyWorktreeId =
   | ({ format: 'legacy' } & ParsedWorktreeId)
 
 export const FOLDER_WORKSPACE_INSTANCE_SEPARATOR = '::workspace:'
-const WORKTREE_KEY_PREFIX = 'orca-worktree://v1?'
+const WORKTREE_KEY_SCHEME = 'orca-worktree://'
+const WORKTREE_KEY_PREFIX = `${WORKTREE_KEY_SCHEME}v1?`
 const FOLDER_WORKSPACE_INSTANCE_SUFFIX = new RegExp(
   `${FOLDER_WORKSPACE_INSTANCE_SEPARATOR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[0-9a-f-]{36}$`
 )
@@ -113,12 +114,19 @@ export function parseAnyWorktreeId(worktreeId: string): ParsedAnyWorktreeId | nu
   if (canonical) {
     return { format: 'canonical', ...canonical }
   }
+  if (worktreeId.startsWith(WORKTREE_KEY_SCHEME)) {
+    return null
+  }
   const legacy = splitLegacyWorktreeId(worktreeId)
   return legacy ? { format: 'legacy', ...legacy } : null
 }
 
 export function isLegacyWorktreeId(worktreeId: string): boolean {
-  return !parseWorktreeKey(worktreeId) && splitLegacyWorktreeId(worktreeId) !== null
+  return (
+    !worktreeId.startsWith(WORKTREE_KEY_SCHEME) &&
+    !parseWorktreeKey(worktreeId) &&
+    splitLegacyWorktreeId(worktreeId) !== null
+  )
 }
 
 export function getRepoIdFromWorktreeId(worktreeId: string): string {
@@ -145,6 +153,9 @@ export function splitWorktreeId(worktreeId: string): ParsedWorktreeId | null {
   const canonical = parseWorktreeKey(worktreeId)
   if (canonical) {
     return canonical
+  }
+  if (worktreeId.startsWith(WORKTREE_KEY_SCHEME)) {
+    return null
   }
   return splitLegacyWorktreeId(worktreeId)
 }

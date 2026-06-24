@@ -197,7 +197,11 @@ describe('RepositoryHostSetupsSection', () => {
     })
 
     expect(openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
+    expect(openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'repo',
+      repoId: 'remote-repo',
+      repoHostId: 'ssh:openclaw%202'
+    })
   })
 
   it('removes independent setup metadata instead of opening an empty repo target', async () => {
@@ -397,7 +401,11 @@ describe('RepositoryHostSetupsSection', () => {
       displayName: 'Orca'
     })
     expect(openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
+    expect(openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'repo',
+      repoId: 'remote-repo',
+      repoHostId: 'ssh:openclaw%202'
+    })
   })
 
   it('clones the project onto another known host from settings', async () => {
@@ -472,7 +480,11 @@ describe('RepositoryHostSetupsSection', () => {
       displayName: 'Orca'
     })
     expect(openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
+    expect(openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'repo',
+      repoId: 'remote-repo',
+      repoHostId: 'ssh:openclaw%202'
+    })
   })
 
   it('creates pending setup metadata for a known host without requiring a path', async () => {

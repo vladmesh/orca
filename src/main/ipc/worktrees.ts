@@ -639,6 +639,34 @@ function hasAmbiguousRepoHost(repos: Repo[], repo: Repo): boolean {
   return hostIds.size > 1
 }
 
+function getRepoForWorktreeRemoval(
+  store: Store,
+  parsed: { repoId: string; hostId?: string }
+): Repo | undefined {
+  const repos = store.getRepos()
+  const matchingRepos = repos.filter((repo) => repo.id === parsed.repoId)
+  const fallbackRepo = store.getRepo(parsed.repoId)
+  if (parsed.hostId !== undefined) {
+    if (fallbackRepo && getRepoExecutionHostId(fallbackRepo) === parsed.hostId) {
+      return fallbackRepo
+    }
+    return matchingRepos.find((candidate) => getRepoExecutionHostId(candidate) === parsed.hostId)
+  }
+  if (matchingRepos.length === 0) {
+    return fallbackRepo
+  }
+  const hostIds = new Set(matchingRepos.map((repo) => getRepoExecutionHostId(repo)))
+  // Why: legacy `repoId::path` removal requests are safe only when the repo id
+  // belongs to exactly one execution host. Canonical IDs must carry hostId.
+  if (hostIds.size !== 1) {
+    return undefined
+  }
+  const [hostId] = hostIds
+  return fallbackRepo && getRepoExecutionHostId(fallbackRepo) === hostId
+    ? fallbackRepo
+    : matchingRepos[0]
+}
+
 function isSshWorktreeMetaCandidateForRepo(
   repos: Repo[],
   repo: Repo,
@@ -1439,8 +1467,11 @@ export function registerWorktreeHandlers(
       // target the same worktree concurrently. Share the destructive backend
       // operation so only one path touches Git and the filesystem.
       const removal = (async (): Promise<RemoveWorktreeResult> => {
-        const { repoId, worktreePath } = parseWorktreeId(args.worktreeId)
-        const repo = store.getRepo(repoId)
+        const parsedWorktreeId = parseWorktreeId(args.worktreeId) as ReturnType<
+          typeof parseWorktreeId
+        > & { hostId?: string }
+        const { repoId, worktreePath } = parsedWorktreeId
+        const repo = getRepoForWorktreeRemoval(store, parsedWorktreeId)
         if (!repo) {
           throw new Error(`Repo not found: ${repoId}`)
         }

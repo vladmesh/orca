@@ -50,6 +50,16 @@ describe('isSafePtySessionId', () => {
     expect(isSafePtySessionId(mintPtySessionId(worktreeId), USER_DATA)).toBe(true)
   })
 
+  it('accepts deep host-qualified worktree keys', () => {
+    const worktreeId = makeWorktreeKey({
+      hostId: 'local',
+      repoId: 'repo-abc123',
+      path: `/Users/thebr/work/${'deep/'.repeat(90)}wt-1`
+    })
+    expect(mintPtySessionId(worktreeId).length).toBeGreaterThan(512)
+    expect(isSafePtySessionId(mintPtySessionId(worktreeId), USER_DATA)).toBe(true)
+  })
+
   it('accepts caller-supplied path-shaped ids that stay inside userData', () => {
     expect(isSafePtySessionId('some-repo::/Users/me/wt/abc@@deadbeef', USER_DATA)).toBe(true)
   })
@@ -58,8 +68,8 @@ describe('isSafePtySessionId', () => {
     expect(isSafePtySessionId('', USER_DATA)).toBe(false)
   })
 
-  it('rejects ids longer than 512 characters', () => {
-    expect(isSafePtySessionId('a'.repeat(513), USER_DATA)).toBe(false)
+  it('rejects ids longer than the bounded safety limit', () => {
+    expect(isSafePtySessionId('a'.repeat(4097), USER_DATA)).toBe(false)
   })
 
   it('rejects ids containing a NUL byte', () => {
@@ -92,6 +102,15 @@ describe('isSafePtySessionId', () => {
 })
 
 describe('parsePtySessionId', () => {
+  it('rejects malformed canonical-looking ids instead of parsing them as legacy', () => {
+    expect(
+      parsePtySessionId('orca-worktree://v1?hostId=bogus&repoId=repo::x&path=%2Fy@@deadbeef')
+    ).toEqual({ worktreeId: null })
+    expect(
+      parsePtySessionId('orca-worktree://v2?hostId=local&repoId=repo::x&path=%2Fy@@deadbeef')
+    ).toEqual({ worktreeId: null })
+  })
+
   it('round-trips a minted id back to its worktreeId', () => {
     const wt = 'repo-abc::/Users/me/wt/feature'
     expect(parsePtySessionId(mintPtySessionId(wt))).toEqual({ worktreeId: wt })

@@ -231,6 +231,57 @@ describe('analyzeWorkspaceSpace', () => {
     })
   })
 
+  it('ignores hostless legacy worktree metadata when repo hosts are ambiguous during space scans', async () => {
+    const root = tempDir!
+    const repoPath = join(root, 'repo')
+    const featurePath = join(root, 'feature')
+    await mkdir(featurePath, { recursive: true })
+    await writeSizedFile(join(featurePath, 'feature.ts'), 512)
+
+    const localRepo: Repo = {
+      id: 'repo-1',
+      path: repoPath,
+      displayName: 'orca',
+      badgeColor: '#000',
+      addedAt: 0
+    }
+    const remoteRepo: Repo = {
+      ...localRepo,
+      path: '/remote/repo',
+      connectionId: 'gpu-vm'
+    }
+    const legacyId = makeLegacyWorktreeId(localRepo.id, featurePath)
+    const migrateWorktreeIdentity = vi.fn()
+    const store = {
+      getRepos: () => [localRepo, remoteRepo],
+      getWorktreeMeta: (worktreeId: string) =>
+        worktreeId === legacyId
+          ? {
+              displayName: 'Ambiguous Legacy',
+              lastActivityAt: 200
+            }
+          : undefined,
+      migrateWorktreeIdentity
+    } as unknown as Store
+    listRepoWorktreesMock.mockResolvedValue([
+      {
+        path: featurePath,
+        head: 'b',
+        branch: 'refs/heads/feature',
+        isBare: false,
+        isMainWorktree: false
+      }
+    ])
+
+    const result = await analyzeWorkspaceSpace(store)
+
+    expect(migrateWorktreeIdentity).not.toHaveBeenCalled()
+    expect(result.worktrees[0]).toMatchObject({
+      displayName: 'feature',
+      status: 'ok'
+    })
+  })
+
   it('reports scan progress as repos and worktrees are scanned', async () => {
     const root = tempDir!
     const repoPath = join(root, 'repo')

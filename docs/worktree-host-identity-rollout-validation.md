@@ -5,10 +5,12 @@
 Use host-qualified worktree IDs so the same repo/path on different execution hosts cannot collide:
 
 ```text
-orca-worktree://v1?hostId=<host>&repoId=<repo>&path=<absolute-path>
+orca-worktree://v1?hostId=<url-encoded-host>&repoId=<url-encoded-repo>&path=<url-encoded-absolute-path>
 ```
 
 Legacy IDs (`repoId::path`) remain accepted at public and persisted boundaries. Runtime and newly written state should resolve to canonical host-qualified IDs.
+
+All canonical query values are URL-encoded. For example, `/absolute/path` is stored as `path=%2Fabsolute%2Fpath`.
 
 ## Compatibility Rules
 

@@ -91,9 +91,9 @@ export function RepositoryHostSetupsSection({
     : ''
   const hostOptionById = new Map(hostOptions.map((option) => [option.id, option]))
   const [deletingSetupKey, setDeletingSetupKey] = useState<string | null>(null)
-  const openSetup = (repoId: string) => {
+  const openSetup = (setup: Pick<ProjectHostSetup, 'repoId' | 'hostId'>) => {
     openSettingsPage()
-    openSettingsTarget({ pane: 'repo', repoId })
+    openSettingsTarget({ pane: 'repo', repoId: setup.repoId, repoHostId: setup.hostId })
   }
 
   if (
@@ -134,7 +134,7 @@ export function RepositoryHostSetupsSection({
                     (setup) => getProjectHostSetupKey(setup) === setupKey
                   )
                   if (nextSetup) {
-                    openSetup(nextSetup.repoId)
+                    openSetup(nextSetup)
                   }
                 }}
               >
@@ -207,7 +207,7 @@ export function RepositoryHostSetupsSection({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    openSetup(setup.repoId)
+                    openSetup(setup)
                   }}
                 >
                   {translate('auto.components.settings.RepositoryPane.openSetup', 'Open')}

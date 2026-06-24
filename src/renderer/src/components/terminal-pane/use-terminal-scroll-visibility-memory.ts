@@ -4,6 +4,7 @@ import { flushTerminalOutput } from '@/lib/pane-manager/pane-terminal-output-sch
 import {
   cancelDeferredScrollRestore,
   captureScrollState,
+  getPendingScrollRestoreState,
   getTerminalOutputEpoch,
   isTerminalScrollRestoreInProgress
 } from '@/lib/pane-manager/pane-scroll'
@@ -84,7 +85,8 @@ export function useTerminalScrollVisibilityMemory({
           if (useRememberedSnapshots && remembered) {
             return [pane.leafId, remembered.scrollState] as const
           }
-          const state = captureScrollState(pane.terminal)
+          const state =
+            getPendingScrollRestoreState(pane.terminal) ?? captureScrollState(pane.terminal)
           const stableState =
             remembered && isTransientTerminalEdgeSnap(state, remembered.scrollState)
               ? remembered.scrollState

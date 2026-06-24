@@ -72,7 +72,11 @@ import {
 } from '@/lib/pane-manager/mobile-driver-state'
 import { resolvePaneKeyForManager } from '@/lib/pane-manager/pane-key-resolution'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
-import { captureScrollState, restoreScrollStateAfterLayout } from '@/lib/pane-manager/pane-scroll'
+import {
+  captureScrollState,
+  getPendingScrollRestoreState,
+  restoreScrollStateAfterLayout
+} from '@/lib/pane-manager/pane-scroll'
 import {
   logTerminalScrollRestore,
   terminalScrollStateForDebug,
@@ -730,7 +734,8 @@ export default function TerminalPane({
     const scrollStatesByLeafId = isVisibleRef.current
       ? Object.fromEntries(
           currentPanes.map((pane) => {
-            const { bufferType, wasAtBottom, viewportY, baseY } = captureScrollState(pane.terminal)
+            const { bufferType, wasAtBottom, viewportY, baseY } =
+              getPendingScrollRestoreState(pane.terminal) ?? captureScrollState(pane.terminal)
             const current = { bufferType, wasAtBottom, viewportY, baseY }
             const previous = lastVisibleScrollStatesByLeafIdRef.current?.[pane.leafId]
             const stable =
@@ -861,7 +866,8 @@ export default function TerminalPane({
     }
     return Object.fromEntries(
       manager.getPanes().map((pane) => {
-        const { bufferType, wasAtBottom, viewportY, baseY } = captureScrollState(pane.terminal)
+        const { bufferType, wasAtBottom, viewportY, baseY } =
+          getPendingScrollRestoreState(pane.terminal) ?? captureScrollState(pane.terminal)
         const current = { bufferType, wasAtBottom, viewportY, baseY }
         const previous = lastVisibleScrollStatesByLeafIdRef.current?.[pane.leafId]
         const stable =

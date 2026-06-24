@@ -37,6 +37,10 @@ export function isTerminalScrollRestoreInProgress(terminal: Terminal): boolean {
   return (terminalScrollRestoreDepths.get(terminal) ?? 0) > 0
 }
 
+export function getPendingScrollRestoreState(terminal: Terminal): ScrollState | null {
+  return deferredScrollRestores.get(terminal)?.state ?? null
+}
+
 export function cancelDeferredScrollRestore(terminal: Terminal): void {
   const pending = deferredScrollRestores.get(terminal)
   if (!pending) {

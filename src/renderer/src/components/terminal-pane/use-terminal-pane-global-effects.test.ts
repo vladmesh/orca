@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   fitPanes: vi.fn(),
   focusActivePane: vi.fn(),
   flushTerminalOutput: vi.fn(),
+  getPendingScrollRestoreState: vi.fn(() => null),
   getTerminalOutputEpoch: vi.fn(() => 0),
   handleTerminalFileDrop: vi.fn(),
   pasteTerminalText: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock('@/lib/pane-manager/pane-terminal-output-scheduler', () => ({
 
 vi.mock('@/lib/pane-manager/pane-scroll', () => ({
   captureScrollState: mocks.captureScrollState,
+  getPendingScrollRestoreState: mocks.getPendingScrollRestoreState,
   getTerminalOutputEpoch: mocks.getTerminalOutputEpoch,
   restoreScrollState: mocks.restoreScrollState,
   restoreScrollStateAfterLayout: mocks.restoreScrollStateAfterLayout

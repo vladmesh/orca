@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     baseY: 0
   })),
   flushTerminalOutput: vi.fn(),
+  getPendingScrollRestoreState: vi.fn((): unknown => null),
   getTerminalOutputEpoch: vi.fn(() => 1),
   isTerminalScrollRestoreInProgress: vi.fn(() => false)
 }))
@@ -66,6 +67,7 @@ vi.mock('@/lib/pane-manager/pane-terminal-output-scheduler', () => ({
 vi.mock('@/lib/pane-manager/pane-scroll', () => ({
   cancelDeferredScrollRestore: mocks.cancelDeferredScrollRestore,
   captureScrollState: mocks.captureScrollState,
+  getPendingScrollRestoreState: mocks.getPendingScrollRestoreState,
   getTerminalOutputEpoch: mocks.getTerminalOutputEpoch,
   isTerminalScrollRestoreInProgress: mocks.isTerminalScrollRestoreInProgress
 }))
@@ -78,6 +80,7 @@ describe('useTerminalScrollVisibilityMemory', () => {
     resetHookRefs()
     vi.clearAllMocks()
     mocks.captureScrollState.mockReset()
+    mocks.getPendingScrollRestoreState.mockReset()
     mocks.getTerminalOutputEpoch.mockReset()
     mocks.isTerminalScrollRestoreInProgress.mockReset()
     mocks.captureScrollState.mockImplementation(() => ({
@@ -86,6 +89,7 @@ describe('useTerminalScrollVisibilityMemory', () => {
       viewportY: 0,
       baseY: 0
     }))
+    mocks.getPendingScrollRestoreState.mockImplementation(() => null)
     mocks.getTerminalOutputEpoch.mockImplementation(() => 1)
     mocks.isTerminalScrollRestoreInProgress.mockImplementation(() => false)
   })
@@ -253,6 +257,40 @@ describe('useTerminalScrollVisibilityMemory', () => {
     )
     expect(visibilityMemory.captureViewportPositions(true).get('leaf-1' as never)).toBe(
       userScrolledState
+    )
+  })
+
+  it('captures the pending restore target while a visibility restore is settling', () => {
+    const terminal = {
+      onScroll: vi.fn(() => ({ dispose: vi.fn() }))
+    }
+    const manager = {
+      getPanes: vi.fn(() => [{ id: 1, leafId: 'leaf-1', terminal }])
+    }
+    const pendingRestoreState = {
+      bufferType: 'normal',
+      wasAtBottom: false,
+      viewportY: 150,
+      baseY: 154
+    }
+    mocks.getPendingScrollRestoreState.mockReturnValue(pendingRestoreState)
+    mocks.captureScrollState.mockReturnValue({
+      bufferType: 'normal',
+      wasAtBottom: false,
+      viewportY: 56,
+      baseY: 154
+    })
+
+    beginHookRender()
+    const visibilityMemory = useTerminalScrollVisibilityMemory({
+      managerRef: { current: manager as never },
+      isVisibleRef: { current: true },
+      visibleResumeCompleteRef: { current: true },
+      paneCount: 1
+    })
+
+    expect(visibilityMemory.captureViewportPositions(false).get('leaf-1' as never)).toBe(
+      pendingRestoreState
     )
   })
 

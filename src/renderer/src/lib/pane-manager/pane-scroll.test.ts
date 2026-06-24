@@ -200,6 +200,37 @@ describe('scroll state', () => {
     expect(terminal.scrollToLine).toHaveBeenCalledWith(42)
   })
 
+  it('can restore after layout without a scrollbar sync jiggle', () => {
+    vi.useFakeTimers()
+    const rafCallbacks: FrameRequestCallback[] = []
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        rafCallbacks.push(callback)
+        return rafCallbacks.length
+      })
+    )
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const terminal = createTerminal({ viewportY: 97, baseY: 100 })
+    const state: ScrollState = {
+      bufferType: 'normal',
+      wasAtBottom: false,
+      viewportY: 98,
+      baseY: 100
+    }
+
+    restoreScrollStateAfterLayout(terminal, state, { syncScrollbar: false })
+    const activeBuffer = terminal.buffer.active as { viewportY: number }
+    activeBuffer.viewportY = 0
+    rafCallbacks.shift()?.(0)
+    activeBuffer.viewportY = 0
+    vi.advanceTimersByTime(80)
+
+    expect(terminal.scrollToLine).toHaveBeenCalledWith(98)
+    expect(terminal.scrollLines).not.toHaveBeenCalled()
+    expect(terminal.buffer.active.viewportY).toBe(98)
+  })
+
   it('keeps the visible line marker alive across deferred layout restores', () => {
     vi.useFakeTimers()
     const rafCallbacks: FrameRequestCallback[] = []

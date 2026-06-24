@@ -618,7 +618,9 @@ describe('useTerminalPaneGlobalEffects', () => {
 
     expect(mocks.captureScrollState).toHaveBeenCalledTimes(2)
     expect(manager.suspendRendering).toHaveBeenCalledTimes(1)
-    expect(mocks.restoreScrollStateAfterLayout).toHaveBeenLastCalledWith(terminalA, preHideState)
+    expect(mocks.restoreScrollStateAfterLayout).toHaveBeenLastCalledWith(terminalA, preHideState, {
+      syncScrollbar: false
+    })
   })
 
   it('clears WebGL texture atlases when the active visible terminal regains focus', () => {

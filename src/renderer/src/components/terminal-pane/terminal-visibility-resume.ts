@@ -144,7 +144,7 @@ function restoreTerminalViewportPositions(
   for (const pane of manager.getPanes()) {
     const position = viewportPositions.get(pane.id)
     if (position) {
-      restoreScrollStateAfterLayout(pane.terminal, position)
+      restoreScrollStateAfterLayout(pane.terminal, position, { syncScrollbar: false })
     }
   }
 }

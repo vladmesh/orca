@@ -72,6 +72,7 @@ import {
 } from '@/lib/pane-manager/mobile-driver-state'
 import { resolvePaneKeyForManager } from '@/lib/pane-manager/pane-key-resolution'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
+import { captureScrollState, restoreScrollStateAfterLayout } from '@/lib/pane-manager/pane-scroll'
 import { captureTerminalShutdownLayout } from './terminal-shutdown-layout-capture'
 import {
   inspectRuntimeTerminalProcess,
@@ -94,7 +95,11 @@ import {
   isHostAuthoritativeLayout,
   planTerminalLiveLayoutInsertions
 } from './terminal-live-layout-reconciliation'
-import type { TerminalQuickCommand, TerminalQuickCommandScope } from '../../../../shared/types'
+import type {
+  TerminalQuickCommand,
+  TerminalQuickCommandScope,
+  TerminalScrollStateSnapshot
+} from '../../../../shared/types'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
 import { refitAndRefreshAllTerminalPanes } from '@/lib/pane-manager/pane-manager-registry'
@@ -461,6 +466,10 @@ export default function TerminalPane({
     [savedLayout, terminalTab]
   )
   const initialLayoutRef = useRef(restoredLayout)
+  const savedScrollStatesByLeafIdRef = useRef(savedLayout.scrollStatesByLeafId)
+  savedScrollStatesByLeafIdRef.current = savedLayout.scrollStatesByLeafId
+  const lastVisibleScrollStatesByLeafIdRef = useRef(savedLayout.scrollStatesByLeafId)
+  const hasAppliedDurableScrollRestoreRef = useRef(false)
   const updateTabTitle = useAppStore((store) => store.updateTabTitle)
   const setRuntimePaneTitle = useAppStore((store) => store.setRuntimePaneTitle)
   const clearRuntimePaneTitle = useAppStore((store) => store.clearRuntimePaneTitle)
@@ -697,6 +706,27 @@ export default function TerminalPane({
     if (Object.keys(mergedScrollbackRefs).length > 0) {
       layout.scrollbackRefsByLeafId = mergedScrollbackRefs
     }
+    // Why: xterm can report a transient top viewport while hidden or during
+    // WebGL/layout resume. Only visible captures are allowed to redefine the
+    // user's durable scroll position.
+    const scrollStatesByLeafId = isVisibleRef.current
+      ? Object.fromEntries(
+          currentPanes.map((pane) => {
+            const { bufferType, wasAtBottom, viewportY, baseY } = captureScrollState(pane.terminal)
+            return [pane.leafId, { bufferType, wasAtBottom, viewportY, baseY }]
+          })
+        )
+      : mergeCapturedLeafState<TerminalScrollStateSnapshot>({
+          prior: existing?.scrollStatesByLeafId,
+          fresh: {},
+          currentLeafIds
+        })
+    if (Object.keys(scrollStatesByLeafId).length > 0) {
+      layout.scrollStatesByLeafId = scrollStatesByLeafId
+      if (isVisibleRef.current) {
+        lastVisibleScrollStatesByLeafIdRef.current = scrollStatesByLeafId
+      }
+    }
     // Why: between pane creation and the deferred rAF where PTYs actually
     // attach, all transports have getPtyId() === null. The merge below
     // preserves the *prior* snapshot's leaf→PTY mappings while still letting
@@ -762,6 +792,80 @@ export default function TerminalPane({
       clearedScrollbackLeafIds.delete(leafId)
     }
   }, [tabId, setTabLayout, worktreeId])
+
+  const persistCurrentScrollStates = useCallback(
+    (scrollStatesByLeafId: Record<string, TerminalScrollStateSnapshot>): void => {
+      if (Object.keys(scrollStatesByLeafId).length === 0) {
+        return
+      }
+      lastVisibleScrollStatesByLeafIdRef.current = scrollStatesByLeafId
+      const existingLayout = useAppStore.getState().terminalLayoutsByTabId[tabId] ?? EMPTY_LAYOUT
+      setTabLayout(tabId, {
+        ...existingLayout,
+        scrollStatesByLeafId
+      })
+    },
+    [setTabLayout, tabId]
+  )
+
+  const captureCurrentScrollStatesByLeafId = useCallback((): Record<
+    string,
+    TerminalScrollStateSnapshot
+  > | null => {
+    const manager = managerRef.current
+    if (!manager) {
+      return null
+    }
+    return Object.fromEntries(
+      manager.getPanes().map((pane) => {
+        const { bufferType, wasAtBottom, viewportY, baseY } = captureScrollState(pane.terminal)
+        return [pane.leafId, { bufferType, wasAtBottom, viewportY, baseY }]
+      })
+    )
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!isVisible) {
+      return
+    }
+    return () => {
+      const captured = captureCurrentScrollStatesByLeafId()
+      if (captured) {
+        // Why: workspace switches can hide terminals before the next passive
+        // effect; capture the visible viewport at the synchronous boundary.
+        persistCurrentScrollStates(captured)
+      }
+    }
+  }, [captureCurrentScrollStatesByLeafId, isVisible, persistCurrentScrollStates])
+
+  useLayoutEffect(() => {
+    if (!isVisible || hasAppliedDurableScrollRestoreRef.current) {
+      return
+    }
+    const scrollStatesByLeafId =
+      savedScrollStatesByLeafIdRef.current ?? lastVisibleScrollStatesByLeafIdRef.current
+    const manager = managerRef.current
+    if (!manager || !scrollStatesByLeafId) {
+      return
+    }
+    const panes = manager.getPanes()
+    if (panes.length === 0) {
+      return
+    }
+    const liveLeafIds = new Set<string>(panes.map((pane) => pane.leafId))
+    if (Object.keys(scrollStatesByLeafId).some((leafId) => !liveLeafIds.has(leafId))) {
+      return
+    }
+    // Why: this is a remount fallback for leaf-durable state. Live mounted
+    // visibility changes use useTerminalScrollVisibilityMemory's in-memory path.
+    for (const pane of panes) {
+      const scrollState = scrollStatesByLeafId[pane.leafId]
+      if (scrollState) {
+        restoreScrollStateAfterLayout(pane.terminal, scrollState, { syncScrollbar: false })
+      }
+    }
+    hasAppliedDurableScrollRestoreRef.current = true
+  }, [isVisible, paneCount])
 
   const clearPaneScrollback = useCallback(
     (pane: ManagedPane): void => {

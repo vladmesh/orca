@@ -7,10 +7,15 @@ const deferredScrollRestores = new WeakMap<
   {
     cancelled: boolean
     rafIds: number[]
+    syncScrollbar: boolean
     state: ScrollState
     timeoutIds: ReturnType<typeof setTimeout>[]
   }
 >()
+
+type RestoreScrollStateOptions = {
+  syncScrollbar?: boolean
+}
 
 export function recordTerminalOutput(terminal: Terminal): void {
   terminalOutputEpochs.set(terminal, getTerminalOutputEpoch(terminal) + 1)
@@ -58,13 +63,18 @@ export function captureScrollState(terminal: Terminal): ScrollState {
 
 export function restoreScrollState(terminal: Terminal, state: ScrollState): void {
   cancelDeferredScrollRestore(terminal)
-  restoreScrollStateNow(terminal, state)
+  restoreScrollStateNow(terminal, state, { syncScrollbar: true })
   releaseScrollStateMarker(state)
 }
 
-export function restoreScrollStateAfterLayout(terminal: Terminal, state: ScrollState): void {
+export function restoreScrollStateAfterLayout(
+  terminal: Terminal,
+  state: ScrollState,
+  options: RestoreScrollStateOptions = {}
+): void {
   cancelDeferredScrollRestore(terminal)
-  restoreScrollStateNow(terminal, state)
+  const syncScrollbar = options.syncScrollbar ?? true
+  restoreScrollStateNow(terminal, state, { syncScrollbar })
   if (typeof requestAnimationFrame !== 'function') {
     releaseScrollStateMarker(state)
     return
@@ -73,12 +83,13 @@ export function restoreScrollStateAfterLayout(terminal: Terminal, state: ScrollS
   const pending = {
     cancelled: false,
     rafIds: [] as number[],
+    syncScrollbar,
     state,
     timeoutIds: [] as ReturnType<typeof setTimeout>[]
   }
   const restore = (): void => {
     if (!pending.cancelled) {
-      restoreScrollStateNow(terminal, state)
+      restoreScrollStateNow(terminal, state, { syncScrollbar })
     }
   }
   const cancelPendingRafs = (): void => {
@@ -100,7 +111,7 @@ export function restoreScrollStateAfterLayout(terminal: Terminal, state: ScrollS
   })
   const timeoutId = setTimeout(() => {
     if (!pending.cancelled) {
-      restoreScrollStateNow(terminal, state)
+      restoreScrollStateNow(terminal, state, { syncScrollbar })
     }
     // Why: background tabs can throttle rAF past the timeout. Once the
     // authoritative timeout restore has run, stale frame callbacks must not
@@ -114,7 +125,11 @@ export function restoreScrollStateAfterLayout(terminal: Terminal, state: ScrollS
   deferredScrollRestores.set(terminal, pending)
 }
 
-function restoreScrollStateNow(terminal: Terminal, state: ScrollState): void {
+function restoreScrollStateNow(
+  terminal: Terminal,
+  state: ScrollState,
+  options: Required<RestoreScrollStateOptions>
+): void {
   if (!terminal.element) {
     return
   }
@@ -129,7 +144,9 @@ function restoreScrollStateNow(terminal: Terminal, state: ScrollState): void {
   // window quietly — the next visibility flip re-fits and re-restores.
   if (state.wasAtBottom) {
     if (safeScrollCall(() => terminal.scrollToBottom())) {
-      forceViewportScrollbarSync(terminal)
+      if (options.syncScrollbar) {
+        forceViewportScrollbarSync(terminal)
+      }
     }
     return
   }
@@ -139,13 +156,15 @@ function restoreScrollStateNow(terminal: Terminal, state: ScrollState): void {
       ? state.firstVisibleLineMarker.line
       : -1
   const targetLine = Math.min(markerLine >= 0 ? markerLine : state.viewportY, buf.baseY)
-  state.viewportY = targetLine
   // Why: deferred rAF/timeout restores re-invoke this function after xterm
-  // reflow settles; keep the marker alive so each call consults the live
-  // line. Callers (restoreScrollState, the timeout in
+  // reflow settles; keep the original viewport and marker alive so later
+  // retries can recover after snapshot replay grows the buffer. Callers
+  // (restoreScrollState, the timeout in
   // restoreScrollStateAfterLayout, cancelDeferredScrollRestore) own disposal.
   if (safeScrollCall(() => terminal.scrollToLine(targetLine))) {
-    forceViewportScrollbarSync(terminal)
+    if (options.syncScrollbar) {
+      forceViewportScrollbarSync(terminal)
+    }
   }
 }
 

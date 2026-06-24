@@ -128,6 +128,23 @@ function invalidateCombinedDiffCachesForRelativePath(relativePath: string): void
   }
 }
 
+function getRetainedResolvedSnapshotEntries(sections: readonly DiffSection[]): GitStatusEntry[] {
+  return sections.flatMap((section) =>
+    section.area === undefined
+      ? []
+      : [
+          {
+            path: section.path,
+            status: section.status as GitStatusEntry['status'],
+            area: section.area,
+            oldPath: section.oldPath,
+            added: section.added,
+            removed: section.removed
+          }
+        ]
+  )
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener(ORCA_EDITOR_EXTERNAL_FILE_CHANGE_EVENT, (event) => {
     const detail = (event as CustomEvent<EditorPathMutationTarget>).detail
@@ -424,36 +441,18 @@ export default function CombinedDiffViewer({
     () => file.uncommittedEntriesSnapshot?.filter((e) => e.conflictStatus !== 'unresolved'),
     [file.uncommittedEntriesSnapshot]
   )
-  const retainedResolvedSnapshotEntries = React.useMemo(
-    () =>
-      new Map(
-        sectionsRef.current
-          .filter((section) => section.area !== undefined)
-          .map((section) => [
-            section.path,
-            {
-              path: section.path,
-              status: section.status as GitStatusEntry['status'],
-              area: section.area!,
-              oldPath: section.oldPath,
-              added: section.added,
-              removed: section.removed
-            }
-          ])
-      ),
-    [sections]
-  )
-  const uncommittedEntries = React.useMemo(
-    () =>
-      snapshotEntries
-        ? resolveCombinedUncommittedSnapshotEntries(
-            snapshotEntries,
-            gitStatusEntries,
-            retainedResolvedSnapshotEntries
-          )
-        : getCombinedUncommittedEntries(gitStatusEntries, file.combinedAreaFilter),
-    [snapshotEntries, gitStatusEntries, retainedResolvedSnapshotEntries, file.combinedAreaFilter]
-  )
+  const uncommittedEntries = React.useMemo(() => {
+    if (!snapshotEntries) {
+      return getCombinedUncommittedEntries(gitStatusEntries, file.combinedAreaFilter)
+    }
+    // Why: row load state changes must not rebuild the snapshot entry list;
+    // the ref is only consulted when live Git status changes.
+    return resolveCombinedUncommittedSnapshotEntries(
+      snapshotEntries,
+      gitStatusEntries,
+      getRetainedResolvedSnapshotEntries(sectionsRef.current)
+    )
+  }, [snapshotEntries, gitStatusEntries, file.combinedAreaFilter])
   const branchEntries = React.useMemo<GitBranchChangeEntry[]>(() => {
     return getCombinedBranchEntries(file.branchEntriesSnapshot, liveBranchEntries)
   }, [file.branchEntriesSnapshot, liveBranchEntries])

@@ -22,32 +22,59 @@ export function getCombinedUncommittedEntries(
 export function resolveCombinedUncommittedSnapshotEntries(
   snapshotEntries: readonly GitStatusEntry[],
   liveEntries: readonly GitStatusEntry[],
-  retainedResolvedEntries?: ReadonlyMap<string, GitStatusEntry>
+  retainedResolvedEntries: readonly GitStatusEntry[] = []
 ): GitStatusEntry[] {
-  const liveEntriesByPath = new Map<string, GitStatusEntry[]>()
-  for (const liveEntry of liveEntries) {
-    const entries = liveEntriesByPath.get(liveEntry.path)
-    if (entries) {
-      entries.push(liveEntry)
-    } else {
-      liveEntriesByPath.set(liveEntry.path, [liveEntry])
+  const liveEntriesByPath = getGitStatusEntriesByPath(liveEntries)
+  const retainedEntriesByPath = getGitStatusEntriesByPath(retainedResolvedEntries)
+  const snapshotAreaKeys = new Set(snapshotEntries.map(getUncommittedAreaPathKey))
+  const resolvedEntries: GitStatusEntry[] = []
+  const resolvedAreaKeys = new Set<string>()
+  const pushResolvedEntry = (entry: GitStatusEntry): void => {
+    const areaKey = getUncommittedAreaPathKey(entry)
+    if (resolvedAreaKeys.has(areaKey)) {
+      return
     }
+    resolvedAreaKeys.add(areaKey)
+    resolvedEntries.push(entry)
   }
 
-  return snapshotEntries.map((snapshotEntry) => {
+  for (const snapshotEntry of snapshotEntries) {
     const livePathEntries = liveEntriesByPath.get(snapshotEntry.path) ?? []
     if (livePathEntries.some((liveEntry) => liveEntry.area === snapshotEntry.area)) {
-      return snapshotEntry
+      pushResolvedEntry(snapshotEntry)
+      continue
     }
 
-    const movedEntry = livePathEntries[0] ?? retainedResolvedEntries?.get(snapshotEntry.path)
+    const retainedPathEntries = retainedEntriesByPath.get(snapshotEntry.path) ?? []
+    if (
+      livePathEntries.length === 0 &&
+      retainedPathEntries.some((retainedEntry) => retainedEntry.area === snapshotEntry.area)
+    ) {
+      pushResolvedEntry(snapshotEntry)
+      continue
+    }
+
+    const movedEntry =
+      livePathEntries[0] ?? (retainedPathEntries.length === 1 ? retainedPathEntries[0] : undefined)
     if (!movedEntry || movedEntry.area === snapshotEntry.area) {
-      return snapshotEntry
+      pushResolvedEntry(snapshotEntry)
+      continue
+    }
+
+    const movedAreaKey = getUncommittedAreaPathKey({
+      path: snapshotEntry.path,
+      area: movedEntry.area
+    })
+    if (snapshotAreaKeys.has(movedAreaKey)) {
+      continue
+    }
+    if (resolvedAreaKeys.has(movedAreaKey)) {
+      continue
     }
 
     // Why: a snapshot-backed Changes tab can outlive stage/unstage actions.
     // Load the area Git now reports so Monaco doesn't diff identical files.
-    return {
+    pushResolvedEntry({
       ...snapshotEntry,
       area: movedEntry.area,
       status: movedEntry.status,
@@ -55,8 +82,29 @@ export function resolveCombinedUncommittedSnapshotEntries(
       added: movedEntry.added,
       removed: movedEntry.removed,
       submodule: movedEntry.submodule
+    })
+  }
+
+  return resolvedEntries
+}
+
+function getGitStatusEntriesByPath(
+  entries: readonly GitStatusEntry[]
+): Map<string, GitStatusEntry[]> {
+  const entriesByPath = new Map<string, GitStatusEntry[]>()
+  for (const entry of entries) {
+    const pathEntries = entriesByPath.get(entry.path)
+    if (pathEntries) {
+      pathEntries.push(entry)
+    } else {
+      entriesByPath.set(entry.path, [entry])
     }
-  })
+  }
+  return entriesByPath
+}
+
+function getUncommittedAreaPathKey(entry: Pick<GitStatusEntry, 'area' | 'path'>): string {
+  return `${entry.area}\0${entry.path}`
 }
 
 export function getCombinedBranchEntries(

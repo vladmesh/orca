@@ -22,6 +22,8 @@ export function registerVisibleTerminalWorktree(worktreeId: string | null | unde
     return () => {}
   }
 
+  // Why: multiple visible panes can belong to one worktree; tokenized claims
+  // let each pane clean up without dropping sibling foreground protection.
   const token = Symbol(id)
   visibleTerminalClaimsByToken.set(token, id)
   return () => {
@@ -30,6 +32,8 @@ export function registerVisibleTerminalWorktree(worktreeId: string | null | unde
 }
 
 export function getForegroundTerminalWorktreeIds(): string[] {
+  // Why: hibernation already gates by foreground worktree, so visible pane
+  // claims join the page-level foreground set instead of adding pane rules.
   return Array.from(
     new Set([...explicitForegroundWorktreeIds, ...visibleTerminalClaimsByToken.values()])
   )

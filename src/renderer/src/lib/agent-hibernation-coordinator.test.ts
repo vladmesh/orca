@@ -250,6 +250,8 @@ describe('agent sleep coordinator', () => {
     expect(shutdown).not.toHaveBeenCalled()
 
     unregister()
+    // Why: the coordinator requires one tick to confirm a stable candidate
+    // and a second tick to revalidate before shutdown.
     await vi.advanceTimersByTimeAsync(1000)
     await vi.advanceTimersByTimeAsync(1000)
 

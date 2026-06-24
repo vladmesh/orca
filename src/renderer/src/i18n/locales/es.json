@@ -122,12 +122,12 @@
       "064bd07810": "Volver",
       "ce37cf5279": "Alternar barra lateral ({{value0}})",
       "e4b9e7dff7": "Alternar barra lateral",
-      "b956d8fc45": "Orca se reinició para recuperarse",
-      "f249f7d142": "Un error de carga se repitió después de recargar, así que Orca se reinició una vez.",
-      "d9f205e7dc": "Orca se recargó para recuperarse",
-      "e19372e30c": "Se recuperó de un error de carga recargando la interfaz de la app.",
-      "8cf930c298": "Orca se recargó para recuperarse",
-      "d8d724bc38": "El uso de memoria era críticamente alto, así que Orca recargó la interfaz de la app."
+      "b956d8fc45": "Orca restauró tu espacio de trabajo",
+      "f249f7d142": "Algo salió mal, así que Orca se reinició una vez. Puedes seguir trabajando.",
+      "d9f205e7dc": "Orca recuperó tu espacio de trabajo",
+      "e19372e30c": "Algo salió mal, así que Orca se recargó. Puedes seguir trabajando.",
+      "8cf930c298": "Orca recuperó tu espacio de trabajo",
+      "d8d724bc38": "Orca se recargó para mantenerse receptivo. Puedes seguir trabajando."
     },
     "web": {
       "WebConnect": {

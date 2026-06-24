@@ -384,26 +384,26 @@ function getRendererRecoveryToastCopy(reason: RendererRecoveryNotificationReason
   switch (reason) {
     case 'lazy-chunk-app-restart':
       return {
-        title: translate('auto.App.b956d8fc45', 'Orca restarted to recover'),
+        title: translate('auto.App.b956d8fc45', 'Orca restored your workspace'),
         description: translate(
           'auto.App.f249f7d142',
-          'A loading error repeated after refresh, so Orca restarted once.'
+          'Something went wrong, so Orca restarted once. You can keep working.'
         )
       }
     case 'lazy-chunk-reload':
       return {
-        title: translate('auto.App.d9f205e7dc', 'Orca refreshed to recover'),
+        title: translate('auto.App.d9f205e7dc', 'Orca recovered your workspace'),
         description: translate(
           'auto.App.e19372e30c',
-          'A loading error was recovered by refreshing the app shell.'
+          'Something went wrong, so Orca refreshed. You can keep working.'
         )
       }
     case 'memory-pressure-reload':
       return {
-        title: translate('auto.App.8cf930c298', 'Orca refreshed to recover'),
+        title: translate('auto.App.8cf930c298', 'Orca recovered your workspace'),
         description: translate(
           'auto.App.d8d724bc38',
-          'Memory usage was critically high, so Orca refreshed the app shell.'
+          'Orca refreshed to stay responsive. You can keep working.'
         )
       }
   }

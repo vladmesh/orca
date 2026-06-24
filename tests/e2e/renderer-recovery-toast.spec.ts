@@ -39,16 +39,16 @@ test('explains guarded renderer recovery once after reload or restart markers', 
 }) => {
   await waitForRendererBoot(orcaPage)
 
-  await expect(orcaPage.getByText('Orca refreshed to recover')).toHaveCount(0)
-  await expect(orcaPage.getByText('Orca restarted to recover')).toHaveCount(0)
+  await expect(orcaPage.getByText('Orca recovered your workspace')).toHaveCount(0)
+  await expect(orcaPage.getByText('Orca restored your workspace')).toHaveCount(0)
 
   await seedRecoveryMarker(orcaPage, 'session', 'memory-pressure-reload')
   await orcaPage.reload()
   await waitForRendererBoot(orcaPage)
 
-  await expect(orcaPage.getByText('Orca refreshed to recover')).toBeVisible()
+  await expect(orcaPage.getByText('Orca recovered your workspace')).toBeVisible()
   await expect(
-    orcaPage.getByText('Memory usage was critically high, so Orca refreshed the app shell.')
+    orcaPage.getByText('Orca refreshed to stay responsive. You can keep working.')
   ).toBeVisible()
   await expect
     .poll(() =>
@@ -63,9 +63,9 @@ test('explains guarded renderer recovery once after reload or restart markers', 
   await orcaPage.reload()
   await waitForRendererBoot(orcaPage)
 
-  await expect(orcaPage.getByText('Orca restarted to recover')).toBeVisible()
+  await expect(orcaPage.getByText('Orca restored your workspace')).toBeVisible()
   await expect(
-    orcaPage.getByText('A loading error repeated after refresh, so Orca restarted once.')
+    orcaPage.getByText('Something went wrong, so Orca restarted once. You can keep working.')
   ).toBeVisible()
   await expect
     .poll(() =>
@@ -86,9 +86,9 @@ test('explains guarded renderer recovery once after reload or restart markers', 
     await orcaPage.reload()
     await waitForRendererBoot(orcaPage)
 
-    await expect(orcaPage.getByText('Orca se recargó para recuperarse')).toBeVisible()
+    await expect(orcaPage.getByText('Orca recuperó tu espacio de trabajo')).toBeVisible()
     await expect(
-      orcaPage.getByText('Se recuperó de un error de carga recargando la interfaz de la app.')
+      orcaPage.getByText('Algo salió mal, así que Orca se recargó. Puedes seguir trabajando.')
     ).toBeVisible()
     await expect
       .poll(() =>

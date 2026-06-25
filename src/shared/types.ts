@@ -2648,8 +2648,8 @@ export type GlobalSettings = {
   /** Why: disabling must persist so startup does not reinstall global agent
    *  hook entries right after the user removes them from Settings or CLI. */
   agentStatusHooksEnabled: boolean
-  /** Why: managed Orca skills are part of the agent runtime surface. Default-on
-   *  permits verified background update attempts; off makes updates manual. */
+  /** Why: verified background updates mutate user skill files, so this remains
+   *  opt-in while experimental; off makes updates manual. */
   managedAgentSkillBackgroundUpdatesEnabled?: boolean
   /** Why: generated tab titles are semantic but subjective, so they stay opt-in
    *  and manual renames remain the stronger user intent. */

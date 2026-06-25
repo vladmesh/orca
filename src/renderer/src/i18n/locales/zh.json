@@ -4369,8 +4369,11 @@
             "skill": {
               "background": {
                 "updates": {
-                  "title": "允许已验证的 Orca 技能更新",
-                  "description": "当 Orca 拥有已验证的安装元数据和安全更新路径时，可以尝试在后台更新托管的智能体技能。关闭后可手动审核更新。"
+                  "title": "自动更新已验证的 Orca 技能",
+                  "description": "实验性功能。启用后，当工作流需要技能时，Orca 可以在后台更新已验证的 Orca 托管全局技能。关闭时，Orca 会要求你手动审核更新。",
+                  "search": {
+                    "experimental": "experimental"
+                  }
                 }
               }
             }

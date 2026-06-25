@@ -12,6 +12,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
     const discoverHostSkills = vi.fn(async () => homeDiscovery())
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       appVersion: '1.0.0',
       discoverHostSkills,
       readTextFile,
@@ -29,6 +30,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
 
   it('returns ready when the verified update succeeds without changing the lock hash', async () => {
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       discoverHostSkills: async () => homeDiscovery(),
       readTextFile: async () => lockfile(ORCHESTRATION_SKILL_NAME, 'same-hash'),
       updateRunner: async () => ({ status: 'success' })
@@ -48,6 +50,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
       .mockResolvedValue(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       appVersion: '1.0.0',
       discoverHostSkills,
       readTextFile,
@@ -72,6 +75,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'))
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       appVersion: '1.0.0',
       discoverHostSkills,
       readTextFile,
@@ -99,6 +103,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
       .mockResolvedValue(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       appVersion: '1.0.0',
       discoverHostSkills,
       readTextFile,
@@ -131,6 +136,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'))
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'new-hash'))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       discoverHostSkills: async () => homeDiscovery(),
       readTextFile,
       updateRunner
@@ -156,6 +162,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
     const discoverHostSkills = vi.fn(async () => homeDiscovery())
     const readTextFile = vi.fn(async () => lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       cooldownMs: 1_000,
       now: () => now,
       discoverHostSkills,
@@ -190,6 +197,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
     let now = 100
     const updateRunner = vi.fn(async () => ({ status: 'failure' as const, exitCode: 1 }))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       cooldownMs: 1_000,
       now: () => now,
       discoverHostSkills: async () => homeDiscovery(),
@@ -207,6 +215,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
 
   it('returns update-timeout distinctly with the manual update command', async () => {
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       discoverHostSkills: async () => homeDiscovery(),
       readTextFile: async () => lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'),
       updateRunner: async () => ({ status: 'timeout' })
@@ -218,12 +227,11 @@ describe('ManagedSkillUpdateCoordinator', () => {
     expect(result.status === 'fallback' ? result.manualCommand?.kind : null).toBe('update')
   })
 
-  it('falls back to manual update every time when automatic updates are disabled', async () => {
+  it('falls back to manual update every time by default', async () => {
     const updateRunner = vi.fn(async () => ({ status: 'success' as const }))
     const discoverHostSkills = vi.fn(async () => homeDiscovery())
     const readTextFile = vi.fn(async () => lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'))
     const coordinator = new ManagedSkillUpdateCoordinator({
-      backgroundUpdatesEnabled: () => false,
       cooldownMs: 1_000,
       discoverHostSkills,
       readTextFile,
@@ -276,6 +284,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
       .mockResolvedValueOnce(lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'))
       .mockResolvedValueOnce(JSON.stringify({ version: 3, skills: {} }))
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       discoverHostSkills: async () => homeDiscovery(),
       readTextFile,
       updateRunner: async () => ({ status: 'success' })

@@ -4,19 +4,23 @@ import { searchKeywords } from './settings-search-keywords'
 export function getManagedAgentSkillBackgroundUpdatesTitle(): string {
   return translate(
     'auto.components.settings.managed.agent.skill.background.updates.title',
-    'Allow verified Orca skill updates'
+    'Automatically update verified Orca skills'
   )
 }
 
 export function getManagedAgentSkillBackgroundUpdatesDescription(): string {
   return translate(
     'auto.components.settings.managed.agent.skill.background.updates.description',
-    'When Orca has verified install metadata and a safe update path, it can try managed agent skill updates in the background. Turn this off to review updates manually.'
+    'Experimental. When enabled, Orca can update verified Orca-managed global skills in the background when a workflow needs them. When off, Orca asks you to review updates manually.'
   )
 }
 
 export function getManagedAgentSkillBackgroundUpdatesSearchKeywords(): string[] {
   return searchKeywords([
+    {
+      key: 'auto.components.settings.managed.agent.skill.background.updates.search.experimental',
+      fallback: 'experimental'
+    },
     {
       key: 'auto.components.settings.managed.agent.skill.background.updates.search.automatic',
       fallback: 'automatic'

@@ -12,7 +12,7 @@ export function getManagedSkillUpdateCoordinator(store: Store): ManagedSkillUpda
   const coordinator = new ManagedSkillUpdateCoordinator({
     appVersion: process.env.npm_package_version,
     backgroundUpdatesEnabled: () =>
-      store.getSettings().managedAgentSkillBackgroundUpdatesEnabled !== false,
+      store.getSettings().managedAgentSkillBackgroundUpdatesEnabled === true,
     discoverHostSkills: (projectRootPath) =>
       discoverSkills({
         repos: store.getRepos(),

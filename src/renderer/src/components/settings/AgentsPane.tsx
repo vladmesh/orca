@@ -982,7 +982,7 @@ export function ManagedAgentSkillBackgroundUpdatesSetting({
   settings,
   updateSettings
 }: AgentsPaneProps): React.JSX.Element {
-  const enabled = settings.managedAgentSkillBackgroundUpdatesEnabled !== false
+  const enabled = settings.managedAgentSkillBackgroundUpdatesEnabled === true
   return (
     <section className="space-y-3">
       <SettingsSwitchRow

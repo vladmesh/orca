@@ -146,9 +146,9 @@ describe('AgentsPane', () => {
     expect(markup).toContain(
       'Keeps this computer and display awake while agents are working. Orca also asks this device to stay awake when the lid is closed, subject to its power policy.'
     )
-    expect(markup).toContain('Allow verified Orca skill updates')
+    expect(markup).toContain('Automatically update verified Orca skills')
     expect(markup).toContain(
-      'When Orca has verified install metadata and a safe update path, it can try managed agent skill updates in the background. Turn this off to review updates manually.'
+      'Experimental. When enabled, Orca can update verified Orca-managed global skills in the background when a workflow needs them. When off, Orca asks you to review updates manually.'
     )
     expect(markup).toContain('aria-checked="false"')
   })
@@ -229,24 +229,21 @@ describe('AgentsPane', () => {
     })
   })
 
-  it('toggles managed skill background updates with the next value', () => {
+  it('enables experimental managed skill background updates from the default off state', () => {
     const updateSettings = vi.fn()
     const element = ManagedAgentSkillBackgroundUpdatesSetting({
-      settings: {
-        ...getDefaultSettings('/tmp'),
-        managedAgentSkillBackgroundUpdatesEnabled: true
-      },
+      settings: getDefaultSettings('/tmp'),
       updateSettings
     })
 
     const updatesSwitch = findSwitchRow(element, getManagedAgentSkillBackgroundUpdatesTitle())
-    expect(updatesSwitch.props.checked).toBe(true)
+    expect(updatesSwitch.props.checked).toBe(false)
 
     const onChange = updatesSwitch.props.onChange as () => void
     onChange()
 
     expect(updateSettings).toHaveBeenCalledWith({
-      managedAgentSkillBackgroundUpdatesEnabled: false
+      managedAgentSkillBackgroundUpdatesEnabled: true
     })
   })
 
@@ -284,6 +281,7 @@ describe('AgentsPane', () => {
   })
 
   it('includes managed skill update search metadata', () => {
+    expect(matchesSettingsSearch('experimental', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('automatic', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('manual', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('skills', getAgentsPaneSearchEntries())).toBe(true)

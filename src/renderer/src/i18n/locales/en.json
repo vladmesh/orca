@@ -4384,8 +4384,11 @@
             "skill": {
               "background": {
                 "updates": {
-                  "title": "Allow verified Orca skill updates",
-                  "description": "When Orca has verified install metadata and a safe update path, it can try managed agent skill updates in the background. Turn this off to review updates manually."
+                  "title": "Automatically update verified Orca skills",
+                  "description": "Experimental. When enabled, Orca can update verified Orca-managed global skills in the background when a workflow needs them. When off, Orca asks you to review updates manually.",
+                  "search": {
+                    "experimental": "experimental"
+                  }
                 }
               }
             }

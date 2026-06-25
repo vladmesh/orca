@@ -6,7 +6,10 @@ Orca should keep Orca-managed agent skills current when a user or agent enters a
 
 Settings must not trigger background skill updates. Settings may continue to show status and manual controls.
 
-Automatic managed-skill updates are enabled by default. Users can turn them off from the Agents settings pane; when disabled, Orca still uses the same workflow triggers, but stale global managed-skill updates fall back to the contextual manual update modal instead of running in the background.
+Automatic managed-skill updates are experimental and off by default. Users can opt in from the
+Agents settings pane; when disabled, Orca still uses the same workflow triggers, but stale global
+managed-skill updates fall back to the contextual manual update modal instead of running in the
+background.
 
 ## Goals
 
@@ -46,7 +49,7 @@ User or agent enters a workflow that needs a managed skill
 
 There is no separate "ask" trigger. Asking is the fallback path for the same intent boundary.
 
-The automatic-updates setting does not create a new trigger. It only controls whether an eligible stale global install may be updated quietly. If the setting is off, that same trigger shows the update modal each time an update is needed and Orca has the manual update command.
+The automatic-updates setting does not create a new trigger. It only controls whether an eligible stale global install may be updated quietly. Because the setting is off by default, that same trigger shows the update modal each time an update is needed unless the user has explicitly enabled experimental automatic updates.
 
 ## Intent Boundary Triggers
 
@@ -59,7 +62,10 @@ The automatic-updates setting does not create a new trigger. It only controls wh
 
 Settings pages, setup guide status cards, and generic skill browsing should not trigger automatic updates. They can display status and manual actions.
 
-The Agents settings pane exposes the default-on preference as "Allow verified Orca skill updates" with copy explaining that Orca can try managed agent skill updates in the background only when it has verified install metadata and a safe update path. Turning it off means updates are reviewed manually at the same workflow boundaries.
+The Agents settings pane exposes the opt-in experimental preference as "Automatically update
+verified Orca skills" with copy explaining that Orca can update verified Orca-managed global
+skills in the background only when a workflow needs them and the safe update path has been proven.
+Leaving it off means updates are reviewed manually at the same workflow boundaries.
 
 ## Modal Copy Requirements
 
@@ -201,7 +207,7 @@ Optional future invalidation:
 | SSH/remote filesystem update writes somewhere unexpected | Do not auto-update remote/SSH skills in v1. |
 | Modal appears unexpectedly because a workflow triggered it | Modal copy must name the feature context and workspace without guessing whether an agent or user initiated it. |
 | 50 agents cause 50 checks | Central coordinator with in-flight dedupe, success cache, and failure cooldown. |
-| User turns automatic updates off | Keep the same triggers, but return the manual update modal for stale global installs without cooling that disabled-path modal away. |
+| User leaves automatic updates off | Keep the same triggers, but return the manual update modal for stale global installs without cooling that disabled-path modal away. |
 | Update command hangs or npm/network is slow | Add timeout, cancellation on app shutdown where possible, and emit a modal only when a manual command is available. |
 | Upstream `skills` CLI lacks reliable dry-run status | Do not show stale status unless backed by coordinator evidence; use update command only after eligibility passes. |
 | Supply-chain/source surprise | Limit to Orca-managed skill names and tracked lock entries; do not update arbitrary Skills page entries. |
@@ -238,7 +244,7 @@ Optional future invalidation:
    - Computer Use workflow start or first runtime invocation.
    - Browser Use/mobile emulator workflow start for `orca-cli`.
 6. Add contextual modal copy and fallback reason handling.
-7. Add the default-on automatic managed-skill updates setting in Agents settings.
+7. Add the experimental opt-in automatic managed-skill updates setting in Agents settings.
 8. Keep Settings manual update/status behavior separate from automatic update triggers.
 
 ## Tests
@@ -252,15 +258,16 @@ Optional future invalidation:
 - WSL runtime fallbacks do not open dead-end setup modals until WSL commands are supported.
 - 50 concurrent requests for one skill produce one update attempt.
 - Failure cooldown prevents repeated attempts.
-- User-disabled automatic updates show the manual update modal on each stale-update trigger.
+- Default-disabled automatic updates show the manual update modal on each stale-update trigger.
 - App-version invalidation re-enables a single check after update.
 - Agent-triggered fallback modal includes triggering context.
 
 ## Recommended First Version
 
-Ship the coordinator and intent-boundary triggers with automatic updates for tracked global
-Orca-managed installs only. The coordinator runs the explicit single-skill global update command
-after discovery and lockfile validation, then verifies the post-update install before reporting
+Ship the coordinator and intent-boundary triggers with modal-first behavior by default. Keep
+automatic updates available as an experimental opt-in for tracked global Orca-managed installs
+only. When enabled, the coordinator runs the explicit single-skill global update command after
+discovery and lockfile validation, then verifies the post-update install before reporting
 `updated`. Everything else uses the same trigger and returns fallback state; actionable fallback
 states open a contextual modal.
 

@@ -74,7 +74,7 @@ export class ManagedSkillUpdateCoordinator {
 
   constructor(deps: ManagedSkillCoordinatorDeps = {}) {
     this.appVersion = deps.appVersion ?? 'unknown'
-    this.backgroundUpdatesEnabled = deps.backgroundUpdatesEnabled ?? (() => true)
+    this.backgroundUpdatesEnabled = deps.backgroundUpdatesEnabled ?? (() => false)
     this.cooldownMs = deps.cooldownMs ?? DEFAULT_COOLDOWN_MS
     this.discoverHostSkills = deps.discoverHostSkills ?? (() => discoverSkills({ repos: [] }))
     this.homeDir = deps.homeDir ?? homedir

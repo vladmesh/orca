@@ -77,6 +77,7 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
 
     for (const testCase of cases) {
       const coordinator = new ManagedSkillUpdateCoordinator({
+        backgroundUpdatesEnabled: () => true,
         discoverHostSkills: async () => discovery([...testCase.skills]),
         readTextFile: async () => lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'),
         updateRunner
@@ -129,6 +130,7 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
       ])
     )
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       discoverHostSkills,
       readTextFile: async () => lockfile(ORCHESTRATION_SKILL_NAME, 'hash-1'),
       updateRunner: async () => ({ status: 'success' })
@@ -243,6 +245,7 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
 
   it('uses canonical orca-linear as the managed Linear skill and leaves legacy unsupported', async () => {
     const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
       discoverHostSkills: async () => homeDiscovery(ORCA_LINEAR_SKILL_NAME),
       readTextFile: async () => lockfile(ORCA_LINEAR_SKILL_NAME, 'hash-1'),
       updateRunner: async () => ({ status: 'success' })

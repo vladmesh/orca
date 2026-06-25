@@ -4384,8 +4384,11 @@
             "skill": {
               "background": {
                 "updates": {
-                  "title": "Permitir actualizaciones verificadas de habilidades de Orca",
-                  "description": "Cuando Orca tiene metadatos de instalación verificados y una ruta de actualización segura, puede intentar actualizar las habilidades de agente administradas en segundo plano. Desactiva esto para revisar las actualizaciones manualmente."
+                  "title": "Actualizar automáticamente habilidades verificadas de Orca",
+                  "description": "Experimental. Cuando está activado, Orca puede actualizar en segundo plano las habilidades globales verificadas administradas por Orca cuando un flujo de trabajo las necesita. Cuando está desactivado, Orca te pide revisar las actualizaciones manualmente.",
+                  "search": {
+                    "experimental": "experimental"
+                  }
                 }
               }
             }

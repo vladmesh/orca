@@ -40,6 +40,8 @@ export function getChecksPanelEmptyStateCopy(
   }
 
   const blockedReason = input.hostedReviewBlockedReason
+  // Why: hosted-review metadata with missing PR cache data is ambiguous, so
+  // avoid showing "no PR" or publish guidance until GitHub status is refreshed.
   if (
     input.hasAmbiguousGitHubHostedReview === true &&
     (input.prRefreshStatus === 'paused' ||

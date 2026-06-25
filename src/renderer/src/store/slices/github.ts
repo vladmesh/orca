@@ -637,7 +637,7 @@ export type PRRefreshState = {
   message?: string
 }
 
-type PRRefreshStateClearToken = {
+export type PRRefreshStateClearToken = {
   sequence: number
   status: PRRefreshState['status']
   updatedAt: number
@@ -1482,6 +1482,21 @@ const ACTIVE_PR_REFRESH_STATUSES = new Set<PRRefreshState['status']>([
 function isPRRefreshStateExpired(state: PRRefreshState, now: number): boolean {
   const expiryAt = getGitHubPRRefreshStateExpiryAt(state)
   return expiryAt !== null && now > expiryAt
+}
+
+export function buildGitHubPRRefreshStateClearToken(
+  state: PRRefreshState | undefined,
+  sequences: Record<string, number>,
+  cacheKey: string
+): PRRefreshStateClearToken | null {
+  if (!state) {
+    return null
+  }
+  return {
+    sequence: sequences[cacheKey] ?? 0,
+    status: state.status,
+    updatedAt: state.updatedAt
+  }
 }
 
 export function getGitHubPRRefreshStateExpiryAt(state: PRRefreshState | undefined): number | null {
@@ -2817,13 +2832,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
     const requestStartedAt = Date.now()
     const requestStartedHostedReviewEntry = get().hostedReviewCache[hostedReviewCacheKey]
     const requestStartedPRRefreshState = get().prRefreshStates[cacheKey]
-    const requestStartedPRRefreshToken = requestStartedPRRefreshState
-      ? {
-          sequence: get().prRefreshSequences[cacheKey] ?? 0,
-          status: requestStartedPRRefreshState.status,
-          updatedAt: requestStartedPRRefreshState.updatedAt
-        }
-      : null
+    const requestStartedPRRefreshToken = buildGitHubPRRefreshStateClearToken(
+      requestStartedPRRefreshState,
+      get().prRefreshSequences,
+      cacheKey
+    )
     prRequestGenerations.set(cacheKey, generation)
 
     const request = (async () => {

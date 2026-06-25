@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useAppStore, type AppState } from '@/store'
 import {
+  buildGitHubPRRefreshStateClearToken,
   getGitHubPRRefreshStateExpiryAt,
   mergePRCommentIntoList,
   prChecksCacheSuffix,
@@ -665,16 +666,17 @@ export default function ChecksPanel(): React.JSX.Element {
         setPrRefreshStateNow(Date.now())
         const storeState = useAppStore.getState()
         const rawState = storeState.prRefreshStates[prCacheKey]
-        if (!rawState) {
+        const token = buildGitHubPRRefreshStateClearToken(
+          rawState,
+          storeState.prRefreshSequences,
+          prCacheKey
+        )
+        if (!token) {
           return
         }
         // Why: time alone does not publish Zustand updates; this timeout clears
         // abandoned active refresh UI without treating expiry as no-PR evidence.
-        storeState.expireGitHubPRRefreshState(prCacheKey, {
-          sequence: storeState.prRefreshSequences[prCacheKey] ?? 0,
-          status: rawState.status,
-          updatedAt: rawState.updatedAt
-        })
+        storeState.expireGitHubPRRefreshState(prCacheKey, token)
       },
       Math.max(0, expiryAt - Date.now() + 1)
     )
@@ -1846,13 +1848,11 @@ export default function ChecksPanel(): React.JSX.Element {
       }
       const refreshStoreState = useAppStore.getState()
       const rawPRRefreshState = refreshStoreState.prRefreshStates[prCacheKey]
-      const startedPRRefreshToken = rawPRRefreshState
-        ? {
-            sequence: refreshStoreState.prRefreshSequences[prCacheKey] ?? 0,
-            status: rawPRRefreshState.status,
-            updatedAt: rawPRRefreshState.updatedAt
-          }
-        : null
+      const startedPRRefreshToken = buildGitHubPRRefreshStateClearToken(
+        rawPRRefreshState,
+        refreshStoreState.prRefreshSequences,
+        prCacheKey
+      )
       let refreshedPR: PRInfo | null = null
       try {
         refreshedPR = await fetchPRForBranch(repo.path, branch, {

@@ -5,6 +5,7 @@ import type {
 import { getBrowserWebviewMemoryProfile } from '../components/browser-pane/webview-registry'
 
 const RENDERER_MEMORY_SAMPLE_INTERVAL_MS = 60_000
+const RENDERER_SURFACE_SAMPLE_INTERVAL_MS = 60_000
 const BYTES_PER_MEGABYTE = 1024 * 1024
 
 type BrowserPerformanceMemory = {
@@ -15,6 +16,7 @@ type BrowserPerformanceMemory = {
 
 let rendererCrashDiagnosticsInstalled = false
 let rendererMemoryInterval: number | null = null
+let rendererSurfaceInterval: number | null = null
 
 export function recordRendererCrashBreadcrumb(
   name: string,
@@ -49,6 +51,11 @@ export function installRendererCrashDiagnostics(): void {
       RENDERER_MEMORY_SAMPLE_INTERVAL_MS
     )
   }
+  recordRendererSurface('startup')
+  rendererSurfaceInterval = window.setInterval(
+    () => recordRendererSurface('interval'),
+    RENDERER_SURFACE_SAMPLE_INTERVAL_MS
+  )
 }
 
 export function _disposeRendererCrashDiagnosticsForTests(): void {
@@ -65,6 +72,10 @@ function disposeRendererCrashDiagnostics(): void {
   if (rendererMemoryInterval !== null) {
     window.clearInterval(rendererMemoryInterval)
     rendererMemoryInterval = null
+  }
+  if (rendererSurfaceInterval !== null) {
+    window.clearInterval(rendererSurfaceInterval)
+    rendererSurfaceInterval = null
   }
 }
 
@@ -110,6 +121,40 @@ function recordRendererMemory(reason: string): void {
       heapLimitMB: toMegabytes(memory.jsHeapSizeLimit),
       browserWebviews: browserWebviews.browserWebviewCount,
       registeredBrowserGuests: browserWebviews.registeredBrowserGuestCount
+    })
+  )
+}
+
+function recordRendererSurface(reason: string): void {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    return
+  }
+
+  const root = document.getElementById('root')
+  const rootRect = root?.getBoundingClientRect()
+  const bodyRect = document.body?.getBoundingClientRect()
+  const rootStyle = root ? window.getComputedStyle(root) : undefined
+  const bodyStyle = document.body ? window.getComputedStyle(document.body) : undefined
+
+  recordRendererCrashBreadcrumb(
+    'renderer_surface',
+    compactBreadcrumbData({
+      reason,
+      visibilityState: document.visibilityState,
+      hasFocus: typeof document.hasFocus === 'function' ? document.hasFocus() : undefined,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio,
+      rootPresent: Boolean(root),
+      rootChildElementCount: root?.childElementCount,
+      rootWidth: rootRect ? Math.round(rootRect.width) : undefined,
+      rootHeight: rootRect ? Math.round(rootRect.height) : undefined,
+      bodyWidth: bodyRect ? Math.round(bodyRect.width) : undefined,
+      bodyHeight: bodyRect ? Math.round(bodyRect.height) : undefined,
+      rootDisplay: rootStyle?.display,
+      rootVisibility: rootStyle?.visibility,
+      rootBackgroundColor: rootStyle?.backgroundColor,
+      bodyBackgroundColor: bodyStyle?.backgroundColor
     })
   )
 }

@@ -2803,13 +2803,15 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     })
   },
 
-  removePendingWorktreeCreation: (creationId) => {
+  removePendingWorktreeCreation: (creationId, options) => {
     set((s) => {
       const entry = s.pendingWorktreeCreations[creationId]
       if (!entry) {
         return {}
       }
+      const cleanupVm = options?.cleanupVm ?? true
       if (
+        cleanupVm &&
         entry.phase === 'provisioning-vm' &&
         typeof window !== 'undefined' &&
         window.api?.ephemeralVm?.cancelProvision
@@ -2820,6 +2822,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         })
       }
       if (
+        cleanupVm &&
         entry.request.ephemeralVmRuntimeId &&
         typeof window !== 'undefined' &&
         window.api?.ephemeralVm?.cleanup

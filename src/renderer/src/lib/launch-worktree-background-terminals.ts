@@ -35,10 +35,9 @@ type BackgroundTerminalLaunch = {
   color?: string
 }
 
-const SETUP_TAB_TITLE = translate(
-  'auto.lib.launch.worktree.background.terminals.setupTitle',
-  'Setup'
-)
+function getSetupTabTitle(): string {
+  return translate('auto.lib.launch.worktree.background.terminals.setupTitle', 'Setup')
+}
 
 export type LaunchWorktreeBackgroundTerminalsArgs = {
   worktreeId: string
@@ -211,7 +210,7 @@ async function addSetupSplit(args: {
       args.tab.primary,
       { leafId: setupLeafId, ptyId: setupPtyId },
       args.direction,
-      SETUP_TAB_TITLE
+      getSetupTabTitle()
     )
   )
   registerBackgroundPaneBuffer(args.tab.tabId, setupLeafId, setupPtyId)
@@ -286,7 +285,7 @@ export async function launchWorktreeBackgroundTerminals(
       worktree,
       connectionId,
       launch: {
-        title: SETUP_TAB_TITLE,
+        title: getSetupTabTitle(),
         command: buildSetupCommand(args.setup),
         env: args.setup.envVars
       }

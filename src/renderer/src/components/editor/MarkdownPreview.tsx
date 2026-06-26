@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- Why: MarkdownPreview owns rendering, link interception,
 search, and viewport state for the preview surface in one place so markdown
 behavior stays coherent across split panes and preview tabs. */
+/* oxlint-disable react-doctor/no-adjust-state-on-prop-change -- Why: search match state is synchronized with DOM highlights inserted into the rendered markdown body. */
 import React, {
   useCallback,
   useEffect,
@@ -29,16 +30,10 @@ import {
   CornerDownLeft,
   MessageSquare,
   Plus,
-  Send,
   X
 } from 'lucide-react'
 import type { Components } from 'react-markdown'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { useAppStore } from '@/store'
 import { toast } from 'sonner'
@@ -51,10 +46,13 @@ import {
   fileUrlToAbsolutePath,
   getMarkdownPreviewLinkTarget,
   isMarkdownPreviewOpenModifier,
-  resolveMarkdownPreviewHref
+  isMarkdownPreviewSystemBrowserModifier,
+  resolveMarkdownPreviewHref,
+  resolveMarkdownPreviewHttpOpenOptions
 } from './markdown-preview-links'
 import {
   createMarkdownDocumentIndex,
+  getMarkdownDocLinkAnchor,
   parseMarkdownDocLinkHref,
   remarkMarkdownDocLinks,
   resolveMarkdownDocLink
@@ -74,8 +72,10 @@ import { openHttpLink } from '@/lib/http-link-routing'
 import { getShortcutPlatform } from '@/lib/shortcut-platform'
 import { isLocalPathOpenBlocked, showLocalPathOpenBlockedToast } from '@/lib/local-path-open-guard'
 import { markdownPreviewUrlTransform } from './markdown-preview-url-transform'
+import { prewarmMarkdownPreviewLocalImages } from './markdown-preview-local-images'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
 import { statRuntimePath } from '@/runtime/runtime-file-client'
+import { useMountedRef } from '@/hooks/useMountedRef'
 import { buildMarkdownTableOfContents } from './markdown-table-of-contents'
 import { MarkdownTableOfContentsPanel } from './MarkdownTableOfContentsPanel'
 import { isMarkdownComment } from '@/lib/diff-comment-compat'
@@ -87,10 +87,14 @@ import {
   sortMarkdownReviewNotes,
   type MarkdownReviewNote
 } from '@/lib/markdown-review-notes'
-import { QuickLaunchAgentMenuItems } from '@/components/tab-bar/QuickLaunchButton'
-import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
+import { copyMarkdownReviewNotesForAgent } from '@/lib/markdown-review-note-copy'
+import { NotesSendMenu, type NotesSendMenuScope } from './NotesSendMenu'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
 import { dirname } from '@/lib/path'
+import { relativePathInsideRoot } from '../../../../shared/cross-platform-path'
+import { translate } from '@/i18n/i18n'
+
+const EMPTY_MARKDOWN_DOCUMENTS: MarkdownDocument[] = []
 
 type MarkdownPreviewProps = {
   content: string
@@ -103,7 +107,10 @@ type MarkdownPreviewProps = {
   showTableOfContents?: boolean
   onCloseTableOfContents?: () => void
   markdownDocuments?: MarkdownDocument[]
-  onOpenDocument?: (document: MarkdownDocument) => void | Promise<void>
+  onOpenDocument?: (
+    document: MarkdownDocument,
+    options?: { anchor?: string | null }
+  ) => void | Promise<void>
   markdownAnnotationsEnabled?: boolean
 }
 
@@ -193,11 +200,28 @@ export function findMarkdownPreviewOpenedEditFileId(
   )
 }
 
+export function getMarkdownPreviewAnchorScrollTop(
+  container: Pick<HTMLElement, 'getBoundingClientRect' | 'scrollTop'>,
+  target: Pick<HTMLElement, 'getBoundingClientRect'>
+): number {
+  const containerTop = container.getBoundingClientRect().top
+  const targetTop = target.getBoundingClientRect().top
+  return Math.max(0, targetTop - containerTop + container.scrollTop - 12)
+}
+
 function cancelMarkdownPreviewEditorRevealFrames(frameIds: MutableRefObject<number[]>): void {
   for (const frameId of frameIds.current) {
     cancelAnimationFrame(frameId)
   }
   frameIds.current = []
+}
+
+function clearMarkdownPreviewTimeout(timeoutRef: MutableRefObject<number | null>): void {
+  if (timeoutRef.current === null) {
+    return
+  }
+  window.clearTimeout(timeoutRef.current)
+  timeoutRef.current = null
 }
 
 function requestMarkdownPreviewEditorRevealFrame(
@@ -314,6 +338,14 @@ function parseLineTarget(hash: string): { line: number; column?: number } | null
   return { line: Number(match[1]), column: match[2] ? Number(match[2]) : undefined }
 }
 
+export function decodeMarkdownPreviewAnchor(rawAnchor: string): string {
+  try {
+    return decodeURIComponent(rawAnchor)
+  } catch {
+    return rawAnchor
+  }
+}
+
 function normalizeMarkdownPreviewAbsolutePath(absolutePath: string): string {
   return absolutePath.replaceAll('\\', '/')
 }
@@ -360,20 +392,18 @@ function findWorktreeForMarkdownPreviewPath(
   worktreesByRepo: Record<string, Worktree[]>,
   absolutePath: string
 ): Worktree | null {
-  const normalizedAbsolutePath = normalizeMarkdownPreviewAbsolutePath(absolutePath)
   let bestMatch: Worktree | null = null
   let bestMatchLength = -1
 
   for (const worktrees of Object.values(worktreesByRepo)) {
     for (const worktree of worktrees) {
-      const normalizedWorktreePath = normalizeMarkdownPreviewAbsolutePath(worktree.path)
-      if (
-        normalizedAbsolutePath === normalizedWorktreePath ||
-        normalizedAbsolutePath.startsWith(`${normalizedWorktreePath}/`)
-      ) {
-        if (normalizedWorktreePath.length > bestMatchLength) {
+      if (relativePathInsideRoot(worktree.path, absolutePath) !== null) {
+        const normalizedWorktreePathLength = normalizeMarkdownPreviewAbsolutePath(
+          worktree.path
+        ).length
+        if (normalizedWorktreePathLength > bestMatchLength) {
           bestMatch = worktree
-          bestMatchLength = normalizedWorktreePath.length
+          bestMatchLength = normalizedWorktreePathLength
         }
       }
     }
@@ -394,6 +424,13 @@ export function resolveMarkdownPreviewSourceWorktree(
   return sourceWorktree ?? findWorktreeForMarkdownPreviewPath(worktreesByRepo, filePath)
 }
 
+export function getMarkdownPreviewSourceRelativePath(
+  filePath: string,
+  sourceWorktreePath: string
+): string | null {
+  return relativePathInsideRoot(sourceWorktreePath, filePath)
+}
+
 export default function MarkdownPreview({
   content,
   filePath,
@@ -404,13 +441,23 @@ export default function MarkdownPreview({
   initialAnchor = null,
   showTableOfContents = false,
   onCloseTableOfContents,
-  markdownDocuments = [],
+  markdownDocuments = EMPTY_MARKDOWN_DOCUMENTS,
   onOpenDocument,
   markdownAnnotationsEnabled = false
 }: MarkdownPreviewProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const setSearchInputElement = useCallback((input: HTMLInputElement | null) => {
+    inputRef.current = input
+    if (!input) {
+      return
+    }
+    // Why: opening preview search should select the query once, while typing
+    // and match-count updates must not keep re-selecting the field.
+    input.focus()
+    input.select()
+  }, [])
   const matchesRef = useRef<HTMLElement[]>([])
   const lastAppliedInitialAnchorRef = useRef<string | null>(null)
   const pendingEditorRevealFrameIdsRef = useRef<number[]>([])
@@ -423,6 +470,7 @@ export default function MarkdownPreview({
   const activateMarkdownLink = useAppStore((s) => s.activateMarkdownLink)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const setMarkdownViewMode = useAppStore((s) => s.setMarkdownViewMode)
+  const frontmatterVisibleByFile = useAppStore((s) => s.markdownFrontmatterVisible)
   const setPendingEditorReveal = useAppStore((s) => s.setPendingEditorReveal)
   const addDiffComment = useAppStore((s) => s.addDiffComment)
   const deleteDiffComment = useAppStore((s) => s.deleteDiffComment)
@@ -462,15 +510,7 @@ export default function MarkdownPreview({
     if (!sourceWorktree) {
       return null
     }
-    const normalizedFilePath = normalizeMarkdownPreviewAbsolutePath(filePath)
-    const normalizedRoot = normalizeMarkdownPreviewAbsolutePath(sourceWorktree.path)
-    if (normalizedFilePath === normalizedRoot) {
-      return ''
-    }
-    if (!normalizedFilePath.startsWith(`${normalizedRoot}/`)) {
-      return null
-    }
-    return normalizedFilePath.slice(normalizedRoot.length + 1)
+    return getMarkdownPreviewSourceRelativePath(filePath, sourceWorktree.path)
   }, [filePath, sourceWorktree])
   const markdownComments = useMemo(
     () =>
@@ -506,6 +546,13 @@ export default function MarkdownPreview({
 
   const renderedContent = usePreserveSectionDuringExternalEdit(content, bodyRef)
 
+  useEffect(() => {
+    const prewarm = prewarmMarkdownPreviewLocalImages(renderedContent, filePath, {
+      runtimeContext: imageRuntimeContext
+    })
+    return prewarm.cancel
+  }, [renderedContent, filePath, imageRuntimeContext])
+
   const frontMatter = useMemo(() => extractFrontMatter(renderedContent), [renderedContent])
   const tableOfContentsItems = useMemo(
     () => buildMarkdownTableOfContents(renderedContent),
@@ -524,9 +571,18 @@ export default function MarkdownPreview({
       .replace(/\r?\n(?:---|\+\+\+)\r?\n?$/, '')
       .trim()
   }, [frontMatter])
+  // Why: front matter is hidden by default (#4468) and controlled from the
+  // markdown preview actions menu, keeping metadata out of the reading surface
+  // unless the user explicitly asks for it.
+  const toggleableSourceFileId: string | null = sourceFileId ?? null
+  const frontmatterVisible = toggleableSourceFileId
+    ? (frontmatterVisibleByFile[toggleableSourceFileId] ?? false)
+    : true
   const [activeAnnotationBlockKey, setActiveAnnotationBlockKey] = useState<string | null>(null)
   const [reviewNotesCopied, setReviewNotesCopied] = useState(false)
+  const [copiedReviewNoteId, setCopiedReviewNoteId] = useState<string | null>(null)
   const reviewNotesCopiedResetTimerRef = useRef<number | null>(null)
+  const copiedReviewNoteResetTimerRef = useRef<number | null>(null)
   // Why: clipboard IPC can resolve after the preview unmounts; skip copied
   // feedback instead of starting a reset timer on a stale preview.
   const reviewNotesCopyMountedRef = useRef(false)
@@ -537,10 +593,6 @@ export default function MarkdownPreview({
     () => sortMarkdownReviewNotes(markdownComments as MarkdownReviewNote[]),
     [markdownComments]
   )
-  const markdownReviewPrompt = useMemo(
-    () => formatMarkdownReviewNotes(markdownReviewNotes, renderedContent),
-    [markdownReviewNotes, renderedContent]
-  )
   const unsentMarkdownReviewNotes = useMemo(
     () => markdownReviewNotes.filter((note) => !note.sentAt),
     [markdownReviewNotes]
@@ -549,13 +601,20 @@ export default function MarkdownPreview({
     () => formatMarkdownReviewNotes(unsentMarkdownReviewNotes, renderedContent),
     [renderedContent, unsentMarkdownReviewNotes]
   )
+  const unsentMarkdownReviewScope = useMemo<NotesSendMenuScope<MarkdownReviewNote>[]>(
+    () => [
+      {
+        id: 'all',
+        label: translate('auto.components.editor.MarkdownPreview.ddf087d12e', 'All unsent notes'),
+        notes: unsentMarkdownReviewNotes,
+        prompt: unsentMarkdownReviewPrompt
+      }
+    ],
+    [unsentMarkdownReviewNotes, unsentMarkdownReviewPrompt]
+  )
   const canShowReviewTools = Boolean(
     markdownAnnotationsEnabled && sourceWorktree && sourceRelativePath !== null
   )
-
-  useEffect(() => {
-    return () => cancelMarkdownPreviewEditorRevealFrames(pendingEditorRevealFrameIdsRef)
-  }, [])
 
   // Why: each split pane needs its own markdown preview viewport even when the
   // underlying file is shared. The caller passes a pane-scoped cache key so
@@ -665,15 +724,31 @@ export default function MarkdownPreview({
     }
   }, [])
 
+  const clearCopiedReviewNoteResetTimer = useCallback((): void => {
+    if (copiedReviewNoteResetTimerRef.current !== null) {
+      window.clearTimeout(copiedReviewNoteResetTimerRef.current)
+      copiedReviewNoteResetTimerRef.current = null
+    }
+  }, [])
+
+  const cleanupPreviewSurfaceTimers = useCallback((): void => {
+    // Why: reveal/copy timers are event-owned, but the final cancellation
+    // belongs to the preview surface unmount.
+    cancelMarkdownPreviewEditorRevealFrames(pendingEditorRevealFrameIdsRef)
+    clearMarkdownPreviewTimeout(attentionReviewCommentTimeoutRef)
+    clearReviewNotesCopiedResetTimer()
+    clearCopiedReviewNoteResetTimer()
+  }, [clearCopiedReviewNoteResetTimer, clearReviewNotesCopiedResetTimer])
+
   const setRootRef = useCallback(
     (node: HTMLDivElement | null) => {
       rootRef.current = node
       reviewNotesCopyMountedRef.current = node !== null
       if (node === null) {
-        clearReviewNotesCopiedResetTimer()
+        cleanupPreviewSurfaceTimers()
       }
     },
-    [clearReviewNotesCopiedResetTimer]
+    [cleanupPreviewSurfaceTimers]
   )
 
   const scrollToAnchor = useCallback((rawAnchor: string): boolean => {
@@ -683,7 +758,7 @@ export default function MarkdownPreview({
       return false
     }
 
-    const decodedAnchor = decodeURIComponent(rawAnchor)
+    const decodedAnchor = decodeMarkdownPreviewAnchor(rawAnchor)
     let target: HTMLElement | null = null
     for (const candidate of body.querySelectorAll<HTMLElement>('[id]')) {
       if (candidate.id === decodedAnchor) {
@@ -695,8 +770,7 @@ export default function MarkdownPreview({
       return false
     }
 
-    const targetTop = target.offsetTop
-    container.scrollTo({ top: Math.max(0, targetTop - 12) })
+    container.scrollTo({ top: getMarkdownPreviewAnchorScrollTop(container, target) })
     target.focus({ preventScroll: true })
     return true
   }, [])
@@ -707,13 +781,6 @@ export default function MarkdownPreview({
     },
     [scrollToAnchor]
   )
-
-  useEffect(() => {
-    if (isSearchOpen) {
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    }
-  }, [isSearchOpen])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -810,8 +877,12 @@ export default function MarkdownPreview({
       return
     }
     try {
-      await window.api.ui.writeClipboardText(markdownReviewPrompt)
-      if (!reviewNotesCopyMountedRef.current) {
+      const copied = await copyMarkdownReviewNotesForAgent({
+        notes: markdownReviewNotes,
+        content: renderedContent,
+        writeClipboardText: window.api.ui.writeClipboardText
+      })
+      if (!copied || !reviewNotesCopyMountedRef.current) {
         return
       }
       clearReviewNotesCopiedResetTimer()
@@ -823,15 +894,31 @@ export default function MarkdownPreview({
     } catch {
       // Best-effort clipboard action; failures usually mean the window is not focused.
     }
-  }, [clearReviewNotesCopiedResetTimer, markdownReviewNotes.length, markdownReviewPrompt])
+  }, [clearReviewNotesCopiedResetTimer, markdownReviewNotes, renderedContent])
 
-  useEffect(() => {
-    return () => {
-      if (attentionReviewCommentTimeoutRef.current !== null) {
-        window.clearTimeout(attentionReviewCommentTimeoutRef.current)
+  const handleCopyMarkdownReviewNote = useCallback(
+    async (note: MarkdownReviewNote): Promise<void> => {
+      try {
+        const copied = await copyMarkdownReviewNotesForAgent({
+          notes: [note],
+          content: renderedContent,
+          writeClipboardText: window.api.ui.writeClipboardText
+        })
+        if (!copied || !reviewNotesCopyMountedRef.current) {
+          return
+        }
+        clearCopiedReviewNoteResetTimer()
+        setCopiedReviewNoteId(note.id)
+        copiedReviewNoteResetTimerRef.current = window.setTimeout(() => {
+          copiedReviewNoteResetTimerRef.current = null
+          setCopiedReviewNoteId(null)
+        }, 1600)
+      } catch {
+        // Best-effort clipboard action; failures usually mean the window is not focused.
       }
-    }
-  }, [])
+    },
+    [clearCopiedReviewNoteResetTimer, renderedContent]
+  )
 
   const pulseRenderedMarkdownReviewNote = useCallback((commentId: string): void => {
     if (attentionReviewCommentTimeoutRef.current !== null) {
@@ -958,8 +1045,8 @@ export default function MarkdownPreview({
           <button
             type="button"
             className="markdown-annotation-add"
-            aria-label="Add note"
-            title="Add note"
+            aria-label={translate('auto.components.editor.MarkdownPreview.13f94d760c', 'Add note')}
+            title={translate('auto.components.editor.MarkdownPreview.13f94d760c', 'Add note')}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -998,6 +1085,57 @@ export default function MarkdownPreview({
                   sentAt={comment.sentAt}
                   onDelete={() => void deleteDiffComment(sourceWorktree.id, comment.id)}
                   onSubmitEdit={(body) => updateDiffComment(sourceWorktree.id, comment.id, body)}
+                  headerActions={
+                    <>
+                      <button
+                        type="button"
+                        className="orca-diff-comment-pill-btn"
+                        title={
+                          copiedReviewNoteId === comment.id
+                            ? translate(
+                                'auto.components.editor.MarkdownPreview.94b520a96a',
+                                'Copied note'
+                              )
+                            : translate(
+                                'auto.components.editor.MarkdownPreview.f961e94057',
+                                'Copy note for agent'
+                              )
+                        }
+                        aria-label={
+                          copiedReviewNoteId === comment.id
+                            ? translate(
+                                'auto.components.editor.MarkdownPreview.94b520a96a',
+                                'Copied note'
+                              )
+                            : translate(
+                                'auto.components.editor.MarkdownPreview.f961e94057',
+                                'Copy note for agent'
+                              )
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void handleCopyMarkdownReviewNote(comment as MarkdownReviewNote)
+                        }}
+                      >
+                        {copiedReviewNoteId === comment.id ? (
+                          <Check className="size-3" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                      <MarkdownSingleNoteSendMenu
+                        worktreeId={sourceWorktree.id}
+                        filePath={filePath}
+                        content={renderedContent}
+                        note={comment as MarkdownReviewNote}
+                        modeSlot="preview-inline"
+                        onDelivered={(notes) =>
+                          void clearDeliveredDiffComments(sourceWorktree.id, notes)
+                        }
+                      />
+                    </>
+                  }
                 />
               </div>
             ))}
@@ -1010,10 +1148,15 @@ export default function MarkdownPreview({
       activeReviewCommentId,
       attentionReviewCommentId,
       addDiffComment,
+      clearDeliveredDiffComments,
+      copiedReviewNoteId,
       deleteDiffComment,
+      filePath,
       getMarkdownCommentsForRange,
+      handleCopyMarkdownReviewNote,
       markdownAnnotationsEnabled,
       content,
+      renderedContent,
       sourceRelativePath,
       sourceWorktree,
       updateDiffComment
@@ -1068,7 +1211,9 @@ export default function MarkdownPreview({
           const handleDocLinkClick = (event: React.MouseEvent<HTMLAnchorElement>): void => {
             event.preventDefault()
             if (resolvedDocument && onOpenDocument) {
-              void onOpenDocument(resolvedDocument)
+              void onOpenDocument(resolvedDocument, {
+                anchor: getMarkdownDocLinkAnchor(docLinkTarget)
+              })
             }
           }
 
@@ -1103,8 +1248,7 @@ export default function MarkdownPreview({
           // link to the system default handler, bypassing the classifier. For a
           // dangling in-worktree .md, pre-check existence so the user sees a
           // toast instead of the silent no-op from shell.openFileUri.
-          const modKey = isMac ? event.metaKey : event.ctrlKey
-          if (modKey && event.shiftKey) {
+          if (isMarkdownPreviewSystemBrowserModifier(event, isMac)) {
             const osTarget = getMarkdownPreviewLinkTarget(href, filePath)
             if (!osTarget) {
               return
@@ -1116,7 +1260,10 @@ export default function MarkdownPreview({
               return
             }
             if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-              openHttpLink(parsed.toString(), { forceSystemBrowser: true })
+              openHttpLink(
+                parsed.toString(),
+                resolveMarkdownPreviewHttpOpenOptions(event, isMac, sourceRoutingWorktreeId)
+              )
               return
             }
             if (parsed.protocol === 'file:') {
@@ -1145,7 +1292,11 @@ export default function MarkdownPreview({
                 void window.api.shell.pathExists(classified.absolutePath).then((exists) => {
                   if (!exists) {
                     toast.error(
-                      `File not found: ${classified.relativePath ?? classified.absolutePath}`
+                      translate(
+                        'auto.components.editor.MarkdownPreview.6c043947ae',
+                        'File not found: {{value0}}',
+                        { value0: classified.relativePath ?? classified.absolutePath }
+                      )
                     )
                     return
                   }
@@ -1164,7 +1315,14 @@ export default function MarkdownPreview({
           }
 
           if (target.protocol === 'http:' || target.protocol === 'https:') {
-            void window.api.shell.openUrl(target.toString())
+            // Why: route through openHttpLink (not raw shell.openUrl) so a plain
+            // click honors the "open links in Orca" setting; openHttpLink keeps
+            // remote runtimes on the system browser. (Cmd/Ctrl+Shift-click is
+            // handled above; this path only sees non-escape-hatch clicks.)
+            openHttpLink(
+              target.toString(),
+              resolveMarkdownPreviewHttpOpenOptions(event, isMac, sourceRoutingWorktreeId)
+            )
             return
           }
 
@@ -1237,11 +1395,23 @@ export default function MarkdownPreview({
               absolutePath
             )
             if (stats.isDirectory) {
-              toast.error(`Cannot open directory: ${relativePath}`)
+              toast.error(
+                translate(
+                  'auto.components.editor.MarkdownPreview.759463a221',
+                  'Cannot open directory: {{value0}}',
+                  { value0: relativePath }
+                )
+              )
               return
             }
           } catch {
-            toast.error(`File not found: ${relativePath}`)
+            toast.error(
+              translate(
+                'auto.components.editor.MarkdownPreview.6c043947ae',
+                'File not found: {{value0}}',
+                { value0: relativePath }
+              )
+            )
             return
           }
 
@@ -1507,6 +1677,13 @@ export default function MarkdownPreview({
 
   return (
     <div className="markdown-preview-shell">
+      {showTableOfContents ? (
+        <MarkdownTableOfContentsPanel
+          items={tableOfContentsItems}
+          onClose={onCloseTableOfContents ?? (() => {})}
+          onNavigate={navigateToTableOfContentsItem}
+        />
+      ) : null}
       <div
         ref={setRootRef}
         tabIndex={0}
@@ -1517,7 +1694,7 @@ export default function MarkdownPreview({
           <div className="markdown-preview-search" onKeyDown={(event) => event.stopPropagation()}>
             <div className="markdown-preview-search-field">
               <Input
-                ref={inputRef}
+                ref={setSearchInputElement}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
@@ -1537,14 +1714,20 @@ export default function MarkdownPreview({
                     rootRef.current?.focus()
                   }
                 }}
-                placeholder="Find in preview"
+                placeholder={translate(
+                  'auto.components.editor.MarkdownPreview.517aea303b',
+                  'Find in preview'
+                )}
                 className="markdown-preview-search-input h-7 !border-0 bg-transparent px-2 shadow-none focus-visible:!border-0 focus-visible:ring-0"
-                aria-label="Find in markdown preview"
+                aria-label={translate(
+                  'auto.components.editor.MarkdownPreview.ec77985138',
+                  'Find in markdown preview'
+                )}
               />
             </div>
             <div className="markdown-preview-search-status">
               {query && matchCount === 0
-                ? 'No results'
+                ? translate('auto.components.editor.MarkdownPreview.c5dc92cfe3', 'No results')
                 : `${matchCount === 0 ? 0 : activeMatchIndex + 1}/${matchCount}`}
             </div>
             <Button
@@ -1553,8 +1736,14 @@ export default function MarkdownPreview({
               size="icon-xs"
               onClick={() => moveToMatch(-1)}
               disabled={matchCount === 0}
-              title="Previous match"
-              aria-label="Previous match"
+              title={translate(
+                'auto.components.editor.MarkdownPreview.1febd97f5c',
+                'Previous match'
+              )}
+              aria-label={translate(
+                'auto.components.editor.MarkdownPreview.1febd97f5c',
+                'Previous match'
+              )}
               className="markdown-preview-search-button"
             >
               <ChevronUp size={14} />
@@ -1565,8 +1754,11 @@ export default function MarkdownPreview({
               size="icon-xs"
               onClick={() => moveToMatch(1)}
               disabled={matchCount === 0}
-              title="Next match"
-              aria-label="Next match"
+              title={translate('auto.components.editor.MarkdownPreview.b42c41bd0d', 'Next match')}
+              aria-label={translate(
+                'auto.components.editor.MarkdownPreview.b42c41bd0d',
+                'Next match'
+              )}
               className="markdown-preview-search-button"
             >
               <ChevronDown size={14} />
@@ -1577,8 +1769,11 @@ export default function MarkdownPreview({
               variant="ghost"
               size="icon-xs"
               onClick={closeSearch}
-              title="Close search"
-              aria-label="Close search"
+              title={translate('auto.components.editor.MarkdownPreview.12052c639c', 'Close search')}
+              aria-label={translate(
+                'auto.components.editor.MarkdownPreview.12052c639c',
+                'Close search'
+              )}
               className="markdown-preview-search-button"
             >
               <X size={14} />
@@ -1597,11 +1792,19 @@ export default function MarkdownPreview({
                 }
               }}
               disabled={markdownReviewNotes.length === 0}
-              title="Jump to first review note"
-              aria-label="Jump to first review note"
+              title={translate(
+                'auto.components.editor.MarkdownPreview.0f9969a159',
+                'Jump to first review note'
+              )}
+              aria-label={translate(
+                'auto.components.editor.MarkdownPreview.0f9969a159',
+                'Jump to first review note'
+              )}
             >
               <MessageSquare className="size-3.5" />
-              <span>Review notes</span>
+              <span>
+                {translate('auto.components.editor.MarkdownPreview.322afab6ff', 'Review notes')}
+              </span>
               <span className="markdown-review-count">{markdownReviewNotes.length}</span>
             </button>
             <button
@@ -1609,59 +1812,43 @@ export default function MarkdownPreview({
               className="markdown-review-icon-button"
               onClick={() => void handleCopyMarkdownReviewNotes()}
               disabled={markdownReviewNotes.length === 0}
-              title="Copy notes for agent"
-              aria-label="Copy notes for agent"
+              title={translate(
+                'auto.components.editor.MarkdownPreview.bb629de58a',
+                'Copy notes for agent'
+              )}
+              aria-label={translate(
+                'auto.components.editor.MarkdownPreview.bb629de58a',
+                'Copy notes for agent'
+              )}
             >
               {reviewNotesCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </button>
             {sourceWorktree ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="markdown-review-icon-button"
-                    disabled={unsentMarkdownReviewNotes.length === 0}
-                    title={
-                      unsentMarkdownReviewNotes.length === 0
-                        ? 'All notes sent'
-                        : 'Send notes to a new agent'
-                    }
-                    aria-label="Send notes to a new agent"
-                  >
-                    <Send className="size-3.5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[180px]">
-                  <QuickLaunchAgentMenuItems
-                    worktreeId={sourceWorktree.id}
-                    groupId={sourceWorktree.id}
-                    onFocusTerminal={focusTerminalTabSurface}
-                    prompt={unsentMarkdownReviewPrompt}
-                    promptDelivery="submit-after-ready"
-                    launchSource="notes_send"
-                    onPromptDelivered={() =>
-                      void clearDeliveredDiffComments(sourceWorktree.id, unsentMarkdownReviewNotes)
-                    }
-                  />
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <NotesSendMenu
+                worktreeId={sourceWorktree.id}
+                groupId={sourceWorktree.id}
+                modeIdParts={['markdown-notes', sourceWorktree.id, filePath, 'preview-toolbar']}
+                scopes={unsentMarkdownReviewScope}
+                triggerClassName="markdown-review-icon-button"
+                onDelivered={(notes) => void clearDeliveredDiffComments(sourceWorktree.id, notes)}
+              />
             ) : null}
           </div>
         ) : null}
         <div ref={bodyRef} className="markdown-body">
-          {/* Why: remarkFrontmatter silently strips front-matter from rendered
-        output. We extract it ourselves and render it as a styled code block so
-        the user can see the metadata in preview mode. */}
-          {frontMatter && (
+          {/* Why: remarkFrontmatter strips front matter from normal markdown
+        output. When the user opts in from the preview actions menu, render the
+        raw metadata as a compact read-only block above the document body. */}
+          {frontMatter && frontmatterVisible ? (
             <div className="mb-4 rounded border border-border/60 bg-muted/40 px-3 py-2">
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                Front Matter
+                {translate('auto.components.editor.MarkdownPreview.2b2b31382c', 'Front Matter')}
               </div>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-muted-foreground font-mono scrollbar-editor">
                 {frontMatterInner}
               </pre>
             </div>
-          )}
+          ) : null}
           <Markdown
             components={components}
             // Why: react-markdown filters file:// after rehype-sanitize; preview
@@ -1690,14 +1877,43 @@ export default function MarkdownPreview({
           </Markdown>
         </div>
       </div>
-      {showTableOfContents ? (
-        <MarkdownTableOfContentsPanel
-          items={tableOfContentsItems}
-          onClose={onCloseTableOfContents ?? (() => {})}
-          onNavigate={navigateToTableOfContentsItem}
-        />
-      ) : null}
     </div>
+  )
+}
+
+function MarkdownSingleNoteSendMenu({
+  worktreeId,
+  filePath,
+  content,
+  note,
+  modeSlot,
+  onDelivered
+}: {
+  worktreeId: string
+  filePath: string
+  content: string
+  note: MarkdownReviewNote
+  modeSlot: string
+  onDelivered: (notes: readonly MarkdownReviewNote[]) => void
+}): React.JSX.Element {
+  return (
+    <NotesSendMenu
+      worktreeId={worktreeId}
+      groupId={worktreeId}
+      modeIdParts={['markdown-notes', worktreeId, filePath, modeSlot, note.id]}
+      scopes={[
+        {
+          id: 'note',
+          label: translate('auto.components.editor.MarkdownPreview.f37b98999e', 'This note'),
+          notes: note.sentAt ? [] : [note],
+          prompt: formatMarkdownReviewNotes([note], content)
+        }
+      ]}
+      targetModeLabel="This note"
+      triggerClassName="orca-diff-comment-pill-btn"
+      disabledTooltip="Note already sent"
+      onDelivered={onDelivered}
+    />
   )
 }
 
@@ -1712,18 +1928,12 @@ function MarkdownAnnotationComposer({
 }): React.JSX.Element {
   const [body, setBody] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const mountedRef = useRef(true)
+  const mountedRef = useMountedRef()
 
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
-
-  useEffect(() => {
-    textareaRef.current?.focus()
+  const focusTextareaRef = useCallback((textarea: HTMLTextAreaElement | null): void => {
+    // Why: opening an annotation composer should focus the draft field on the
+    // mount edge; no external subscription is needed.
+    textarea?.focus()
   }, [])
 
   const trimmed = body.trim()
@@ -1750,11 +1960,16 @@ function MarkdownAnnotationComposer({
 
   return (
     <div className="markdown-annotation-composer" onClick={(event) => event.stopPropagation()}>
-      <div className="orca-diff-comment-popover-label">Selected text</div>
+      <div className="orca-diff-comment-popover-label">
+        {translate('auto.components.editor.MarkdownPreview.b1bfc04034', 'Selected text')}
+      </div>
       <textarea
-        ref={textareaRef}
+        ref={focusTextareaRef}
         className="orca-diff-comment-popover-textarea"
-        placeholder="Add note for the AI"
+        placeholder={translate(
+          'auto.components.editor.MarkdownPreview.d737791433',
+          'Add note for the AI'
+        )}
         value={body}
         onChange={(event) => {
           setBody(event.target.value)
@@ -1777,10 +1992,12 @@ function MarkdownAnnotationComposer({
       />
       <div className="orca-diff-comment-popover-footer">
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
-          Cancel
+          {translate('auto.components.editor.MarkdownPreview.e4683f70c4', 'Cancel')}
         </Button>
         <Button size="sm" onClick={() => void submit()} disabled={submitting || !trimmed}>
-          {submitting ? 'Saving…' : 'Add note'}
+          {submitting
+            ? translate('auto.components.editor.MarkdownPreview.d652c87c91', 'Saving…')
+            : translate('auto.components.editor.MarkdownPreview.13f94d760c', 'Add note')}
           {!submitting && <CornerDownLeft className="ml-1 size-3 opacity-70" />}
         </Button>
       </div>

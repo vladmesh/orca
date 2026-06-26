@@ -9,7 +9,6 @@ import type { AgentHookInstallState, AgentHookInstallStatus } from '../../shared
 import {
   createManagedCommandMatcher,
   getSharedManagedScriptPath,
-  hookDefinitionHasManagedCommand,
   readHooksJson,
   removeManagedCommands,
   wrapPosixHookCommand,
@@ -91,6 +90,23 @@ function definitionHasCurrentCommand(definition: HookDefinition, command: string
   )
 }
 
+function definitionHasStaleManagedCommand(
+  definition: HookDefinition,
+  currentCommand: string | null,
+  isManagedCommand: (command: string | undefined) => boolean
+): boolean {
+  const commands = [definition.command, definition.bash, definition.powershell]
+  if (commands.some((command) => isManagedCommand(command) && command !== currentCommand)) {
+    return true
+  }
+  return (
+    Array.isArray(definition.hooks) &&
+    definition.hooks.some(
+      (hook) => isManagedCommand(hook.command) && hook.command !== currentCommand
+    )
+  )
+}
+
 function definitionsChanged(before: HookDefinition[], after: HookDefinition[]): boolean {
   return (
     before.length !== after.length ||
@@ -120,6 +136,7 @@ function getManagedScript(target: 'local' | 'posix' = 'local'): string {
       '  $payload = $inputData | ConvertFrom-Json',
       '  $body = @{',
       '    paneKey = $env:ORCA_PANE_KEY',
+      '    launchToken = $env:ORCA_AGENT_LAUNCH_TOKEN',
       '    tabId = $env:ORCA_TAB_ID',
       '    worktreeId = $env:ORCA_WORKTREE_ID',
       '    hookEventName = $env:ORCA_COPILOT_HOOK_EVENT',
@@ -155,6 +172,7 @@ function getManagedScript(target: 'local' | 'posix' = 'local'): string {
     '  -H "X-Orca-Agent-Hook-Token: ${ORCA_AGENT_HOOK_TOKEN}" \\',
     '  --data-urlencode "paneKey=${ORCA_PANE_KEY}" \\',
     '  --data-urlencode "tabId=${ORCA_TAB_ID}" \\',
+    '  --data-urlencode "launchToken=${ORCA_AGENT_LAUNCH_TOKEN}" \\',
     '  --data-urlencode "worktreeId=${ORCA_WORKTREE_ID}" \\',
     '  --data-urlencode "hookEventName=${ORCA_COPILOT_HOOK_EVENT}" \\',
     '  --data-urlencode "env=${ORCA_AGENT_HOOK_ENV}" \\',
@@ -184,6 +202,7 @@ export class CopilotHookService {
     const missing: string[] = []
     let presentCount = 0
     let staleManagedPresent = false
+    const managedEvents = new Set<string>(COPILOT_EVENTS)
     for (const eventName of COPILOT_EVENTS) {
       const command = getManagedCommand(scriptPath, eventName)
       const definitions = Array.isArray(config.hooks?.[eventName]) ? config.hooks![eventName]! : []
@@ -194,12 +213,20 @@ export class CopilotHookService {
         presentCount += 1
       } else {
         missing.push(eventName)
-        staleManagedPresent =
-          staleManagedPresent ||
-          definitions.some((definition) =>
-            hookDefinitionHasManagedCommand(definition, isManagedCommand)
-          )
       }
+    }
+    for (const [eventName, definitions] of Object.entries(config.hooks ?? {})) {
+      if (!Array.isArray(definitions)) {
+        continue
+      }
+      const currentCommand = managedEvents.has(eventName)
+        ? getManagedCommand(scriptPath, eventName)
+        : null
+      staleManagedPresent =
+        staleManagedPresent ||
+        definitions.some((definition) =>
+          definitionHasStaleManagedCommand(definition, currentCommand, isManagedCommand)
+        )
     }
 
     const managedHooksPresent = presentCount > 0 || staleManagedPresent
@@ -208,6 +235,9 @@ export class CopilotHookService {
     if (config.disableAllHooks === true && managedHooksPresent) {
       state = 'partial'
       detail = 'Managed Copilot hook file is disabled'
+    } else if (staleManagedPresent) {
+      state = 'partial'
+      detail = 'Managed Copilot hook file contains stale entries'
     } else if (missing.length === 0) {
       state = 'installed'
       detail = null

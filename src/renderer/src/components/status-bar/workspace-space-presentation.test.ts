@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceSpaceWorktree } from '../../../../shared/workspace-space-types'
 import {
+  WORKSPACE_SPACE_FILTER_QUERY_MAX_BYTES,
   countWorkspaceSpaceActiveAgents,
   filterWorkspaceSpaceRows,
+  getLargestWorkspaceSpaceItemSize,
+  getLargestWorkspaceSpaceRowSize,
   getSelectedDeletableWorkspaceIds,
   getVisibleDeletableWorkspaceIds,
   getWorkspaceSpaceGitStatusRefreshCandidates,
+  isWorkspaceSpaceFilterQueryTooLarge,
   isWorkspaceSpaceRowReadyToDelete,
+  pruneWorkspaceSpaceSelectedIds,
+  resolveWorkspaceSpaceInspectedWorktreeId,
+  resolveWorkspaceSpaceTreemapZoomWorktreeId,
   sortWorkspaceSpaceRows
 } from './workspace-space-presentation'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
@@ -97,6 +104,48 @@ describe('workspace space presentation helpers', () => {
       'a'
     ])
     expect(filterWorkspaceSpaceRows(rows, '', true).map((item) => item.worktreeId)).toEqual(['a'])
+  })
+
+  it('rejects oversized pasted filters before reading workspace rows', () => {
+    const oversizedQuery = 'secret-workspace-space'.repeat(WORKSPACE_SPACE_FILTER_QUERY_MAX_BYTES)
+    const rows = [
+      {
+        get canDelete(): boolean {
+          throw new Error('oversized workspace-space filters must not check delete state')
+        },
+        get displayName(): string {
+          throw new Error('oversized workspace-space filters must not scan names')
+        }
+      }
+    ] as WorkspaceSpaceWorktree[]
+
+    expect(isWorkspaceSpaceFilterQueryTooLarge(oversizedQuery)).toBe(true)
+    expect(filterWorkspaceSpaceRows(rows, oversizedQuery, true)).toEqual([])
+  })
+
+  it('rejects oversized whitespace before trimming', () => {
+    const rows = [row({ worktreeId: 'a', displayName: 'Frontend Cache' })]
+
+    expect(
+      filterWorkspaceSpaceRows(rows, ' '.repeat(WORKSPACE_SPACE_FILTER_QUERY_MAX_BYTES + 1), false)
+    ).toEqual([])
+  })
+
+  it('finds largest sizes without spreading large workspace arrays', () => {
+    const rows = Array.from({ length: 130_000 }, (_, index) =>
+      row({ worktreeId: `wt-${index}`, sizeBytes: index === 87_654 ? 999_999 : index })
+    )
+    const items = Array.from({ length: 130_000 }, (_, index) => ({
+      name: `item-${index}`,
+      path: `/repo/item-${index}`,
+      kind: 'directory' as const,
+      sizeBytes: index === 12_345 ? 888_888 : index
+    }))
+
+    expect(getLargestWorkspaceSpaceRowSize(rows)).toBe(999_999)
+    expect(getLargestWorkspaceSpaceItemSize(items)).toBe(888_888)
+    expect(getLargestWorkspaceSpaceRowSize([])).toBe(0)
+    expect(getLargestWorkspaceSpaceItemSize([])).toBe(0)
   })
 
   it('returns only selected worktrees that can be deleted', () => {
@@ -219,5 +268,38 @@ describe('workspace space presentation helpers', () => {
     expect(
       getWorkspaceSpaceGitStatusRefreshCandidates(rows).map((item) => item.worktreeId)
     ).toEqual(rows.map((item) => item.worktreeId))
+  })
+
+  it('resolves inspected worktree ids from the current scan rows', () => {
+    const rows = [
+      row({ worktreeId: 'errored', status: 'error' }),
+      row({ worktreeId: 'ready', status: 'ok' })
+    ]
+
+    expect(resolveWorkspaceSpaceInspectedWorktreeId(rows, 'errored')).toBe('errored')
+    expect(resolveWorkspaceSpaceInspectedWorktreeId(rows, 'missing')).toBe('ready')
+    expect(resolveWorkspaceSpaceInspectedWorktreeId([], 'missing')).toBeNull()
+  })
+
+  it('keeps treemap zoom only for ready current scan rows', () => {
+    const rows = [
+      row({ worktreeId: 'ready', status: 'ok' }),
+      row({ worktreeId: 'errored', status: 'error' })
+    ]
+
+    expect(resolveWorkspaceSpaceTreemapZoomWorktreeId(rows, 'ready')).toBe('ready')
+    expect(resolveWorkspaceSpaceTreemapZoomWorktreeId(rows, 'errored')).toBeNull()
+    expect(resolveWorkspaceSpaceTreemapZoomWorktreeId(rows, 'missing')).toBeNull()
+  })
+
+  it('prunes selected workspace ids that are absent from the current scan', () => {
+    const selectedIds = new Set(['ready', 'missing'])
+    const pruned = pruneWorkspaceSpaceSelectedIds([row({ worktreeId: 'ready' })], selectedIds)
+
+    expect([...pruned]).toEqual(['ready'])
+    expect(pruned).not.toBe(selectedIds)
+
+    const unchanged = pruneWorkspaceSpaceSelectedIds([row({ worktreeId: 'ready' })], pruned)
+    expect(unchanged).toBe(pruned)
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { buildWorktreeDragPreviewOffsets } from './worktree-drag-preview-offsets'
 import {
   buildManualOrderUpdatesForGroupDrop,
-  buildWorktreeDragPreviewOffsets,
   buildManualOrderUpdatesForVisibleGroups,
   expandDraggedWorktreeIdsForVisibleLineage,
   moveWorktreeIdsWithinGroup,
@@ -55,6 +55,16 @@ describe('moveWorktreeIdsWithinGroup', () => {
       'c'
     ])
   })
+
+  it('moves a very large selected batch without overflowing argument limits', () => {
+    const ids = Array.from({ length: 130_000 }, (_, index) => `wt-${index}`)
+
+    const result = moveWorktreeIdsWithinGroup(ids, ids, 0)
+
+    expect(result).toHaveLength(ids.length)
+    expect(result[0]).toBe('wt-0')
+    expect(result.at(-1)).toBe('wt-129999')
+  })
 })
 
 describe('buildWorktreeDragPreviewOffsets', () => {
@@ -107,6 +117,34 @@ describe('buildWorktreeDragPreviewOffsets', () => {
     })
 
     expect(offsets.size).toBe(0)
+  })
+
+  it('uses the dragged unit height when previewing variable-height rows', () => {
+    const offsets = buildWorktreeDragPreviewOffsets({
+      groupIds: ['parent', 'sibling'],
+      draggedIds: ['parent'],
+      dropIndex: 2,
+      rects: [
+        { worktreeId: 'parent', groupIndex: 0, top: 0, bottom: 300 },
+        { worktreeId: 'sibling', groupIndex: 1, top: 308, bottom: 408 }
+      ]
+    })
+
+    expect(Array.from(offsets)).toEqual([['sibling', -308]])
+  })
+
+  it('uses the dragged unit height when previewing a short row above a tall row', () => {
+    const offsets = buildWorktreeDragPreviewOffsets({
+      groupIds: ['parent', 'sibling'],
+      draggedIds: ['sibling'],
+      dropIndex: 0,
+      rects: [
+        { worktreeId: 'parent', groupIndex: 0, top: 0, bottom: 300 },
+        { worktreeId: 'sibling', groupIndex: 1, top: 308, bottom: 408 }
+      ]
+    })
+
+    expect(Array.from(offsets)).toEqual([['parent', 108]])
   })
 })
 
@@ -184,6 +222,28 @@ describe('buildManualOrderUpdatesForVisibleGroups', () => {
       ['parent', { manualOrder: 0 }],
       ['child', { manualOrder: -1000 }]
     ])
+  })
+
+  it('reorders a very large visible group without overflowing argument limits', () => {
+    const ids = Array.from({ length: 130_000 }, (_, index) => `wt-${index}`)
+    const rankByWorktreeId = new Map(
+      ids.map((id, index) => [id, (ids.length - index) * 1000] as const)
+    )
+
+    const result = buildManualOrderUpdatesForVisibleGroups({
+      groups: [{ key: 'all', worktreeIds: ids }],
+      sourceGroupKey: 'all',
+      draggedIds: ['wt-0'],
+      dropIndex: ids.length,
+      now: 10_000,
+      rankByWorktreeId
+    })
+
+    expect(result.changed).toBe(true)
+    expect(result.orderedIds).toHaveLength(ids.length)
+    expect(result.orderedIds[0]).toBe('wt-1')
+    expect(result.orderedIds.at(-1)).toBe('wt-0')
+    expect(Array.from(result.updates)).toEqual([['wt-0', { manualOrder: 0 }]])
   })
 })
 

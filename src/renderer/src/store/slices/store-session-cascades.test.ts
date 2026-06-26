@@ -1,15 +1,7 @@
 /* eslint-disable max-lines */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { create } from 'zustand'
-import type { AppState } from '../types'
 import type * as AgentStatusModule from '@/lib/agent-status'
-import type {
-  BrowserTab,
-  DetectedWorktreeListResult,
-  TerminalLayoutSnapshot,
-  TerminalTab,
-  Worktree
-} from '../../../../shared/types'
+import type { BrowserTab, DetectedWorktreeListResult, Worktree } from '../../../../shared/types'
 import { isTerminalLeafId } from '../../../../shared/stable-pane-id'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 
@@ -108,110 +100,11 @@ const mockApi = {
 // @ts-expect-error -- mock
 globalThis.window = { api: mockApi }
 
-import { createRepoSlice } from './repos'
-import { createSparsePresetsSlice } from './sparse-presets'
-import { createWorktreeSlice } from './worktrees'
-import { createTerminalSlice } from './terminals'
-import { createTabsSlice } from './tabs'
-import { createUISlice } from './ui'
-import { createSettingsSlice } from './settings'
-import { createKeybindingsSlice } from './keybindings'
-import { createGitHubSlice } from './github'
-import { createHostedReviewSlice } from './hosted-review'
-import { createLinearSlice } from './linear'
-import { createPreflightSlice } from './preflight'
-import { createEditorSlice } from './editor'
-import { createStatsSlice } from './stats'
-import { createMemorySlice } from './memory'
-import { createWorkspaceSpaceSlice } from './workspace-space'
-import { createClaudeUsageSlice } from './claude-usage'
-import { createCodexUsageSlice } from './codex-usage'
-import { createOpenCodeUsageSlice } from './opencode-usage'
-import { createBrowserSlice } from './browser'
-import { createRateLimitSlice } from './rate-limits'
-import { createSshSlice } from './ssh'
-import { createAgentStatusSlice } from './agent-status'
-import { createDiffCommentsSlice } from './diffComments'
-import { createDetectedAgentsSlice } from './detected-agents'
-import { createWorktreeNavHistorySlice } from './worktree-nav-history'
-import { createDictationSlice } from './dictation'
-import { createWorkspaceCleanupSlice } from './workspace-cleanup'
-
-function createTestStore() {
-  return create<AppState>()((...a) => ({
-    ...createRepoSlice(...a),
-    ...createSparsePresetsSlice(...a),
-    ...createWorktreeSlice(...a),
-    ...createTerminalSlice(...a),
-    ...createTabsSlice(...a),
-    ...createUISlice(...a),
-    ...createSettingsSlice(...a),
-    ...createKeybindingsSlice(...a),
-    ...createGitHubSlice(...a),
-    ...createHostedReviewSlice(...a),
-    ...createLinearSlice(...a),
-    ...createPreflightSlice(...a),
-    ...createEditorSlice(...a),
-    ...createStatsSlice(...a),
-    ...createMemorySlice(...a),
-    ...createWorkspaceSpaceSlice(...a),
-    ...createClaudeUsageSlice(...a),
-    ...createCodexUsageSlice(...a),
-    ...createOpenCodeUsageSlice(...a),
-    ...createBrowserSlice(...a),
-    ...createRateLimitSlice(...a),
-    ...createSshSlice(...a),
-    ...createAgentStatusSlice(...a),
-    ...createDiffCommentsSlice(...a),
-    ...createDetectedAgentsSlice(...a),
-    ...createWorktreeNavHistorySlice(...a),
-    ...createDictationSlice(...a),
-    ...createWorkspaceCleanupSlice(...a)
-  }))
-}
+import { createTestStore, makeWorktree, makeTab, makeLayout } from './store-test-helpers'
+import { computeVisibleWorktreeIds } from '@/components/sidebar/visible-worktrees'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 
 // ─── Helpers ──────────────────────────────────────────────────────────
-
-function makeWorktree(overrides: Partial<Worktree> & { id: string; repoId: string }): Worktree {
-  return {
-    path: '/tmp/wt',
-    head: 'abc123',
-    branch: 'refs/heads/feature',
-    isBare: false,
-    isMainWorktree: false,
-    displayName: 'feature',
-    comment: '',
-    linkedIssue: null,
-    linkedPR: null,
-    linkedLinearIssue: null,
-    linkedGitLabMR: null,
-    linkedGitLabIssue: null,
-    isArchived: false,
-    isUnread: false,
-    isPinned: false,
-    sortOrder: 0,
-    lastActivityAt: 0,
-    ...overrides
-  }
-}
-
-function makeTab(
-  overrides: Partial<TerminalTab> & { id: string; worktreeId: string }
-): TerminalTab {
-  return {
-    ptyId: null,
-    title: 'Terminal 1',
-    customTitle: null,
-    color: null,
-    sortOrder: 0,
-    createdAt: Date.now(),
-    ...overrides
-  }
-}
-
-function makeLayout(): TerminalLayoutSnapshot {
-  return { root: null, activeLeafId: null, expandedLeafId: null }
-}
 
 function makeDetectedWorktreeResult(
   repoId: string,
@@ -412,6 +305,54 @@ describe('hydrateWorkspaceSession', () => {
     // hydrateWorkspaceSession. It flips to true in reconnectPersistedTerminals()
     // after all eager PTY spawns complete.
     expect(s.workspaceSessionReady).toBe(false)
+  })
+
+  it('hydrates quick command labels from unified tabs back to terminal tabs', () => {
+    const store = createTestStore()
+    const wt = 'repo1::/path/wt1'
+
+    store.setState({
+      repos: [
+        { id: 'repo1', path: '/repo1', displayName: 'Repo 1', badgeColor: '#000', addedAt: 0 }
+      ],
+      worktreesByRepo: {
+        repo1: [makeWorktree({ id: wt, repoId: 'repo1', path: '/path/wt1' })]
+      }
+    })
+
+    store.getState().hydrateWorkspaceSession({
+      activeRepoId: 'repo1',
+      activeWorktreeId: wt,
+      activeTabId: 'tab-1',
+      tabsByWorktree: {
+        [wt]: [makeTab({ id: 'tab-1', worktreeId: wt, title: 'pnpm test' })]
+      },
+      terminalLayoutsByTabId: {
+        'tab-1': makeLayout()
+      },
+      unifiedTabs: {
+        [wt]: [
+          {
+            id: 'tab-1',
+            entityId: 'tab-1',
+            groupId: 'group-1',
+            worktreeId: wt,
+            contentType: 'terminal',
+            label: 'pnpm test',
+            quickCommandLabel: 'Run tests',
+            customLabel: null,
+            color: null,
+            sortOrder: 0,
+            createdAt: 1
+          }
+        ]
+      },
+      tabGroups: {
+        [wt]: [{ id: 'group-1', worktreeId: wt, activeTabId: 'tab-1', tabOrder: ['tab-1'] }]
+      }
+    })
+
+    expect(store.getState().tabsByWorktree[wt][0].quickCommandLabel).toBe('Run tests')
   })
 
   it('preserves tabs for a known repo whose worktrees have not loaded yet', () => {
@@ -1551,13 +1492,13 @@ describe('reconnectPersistedTerminals', () => {
         [wt2]: [makeTab({ id: 'tab2', worktreeId: wt2, ptyId: 'old-pty-2' })]
       },
       terminalLayoutsByTabId: { tab1: makeLayout(), tab2: makeLayout() },
-      activeWorktreeIdsOnShutdown: [wt1, wt2]
+      activeWorktreeIdsOnShutdown: [wt1]
     })
 
     expect(store.getState().workspaceSessionReady).toBe(false)
     expect(store.getState().tabsByWorktree[wt1][0].ptyId).toBeNull()
     expect(store.getState().tabsByWorktree[wt2][0].ptyId).toBeNull()
-    expect(store.getState().pendingReconnectWorktreeIds).toEqual([wt1, wt2])
+    expect(store.getState().pendingReconnectWorktreeIds).toEqual([wt1])
 
     await store.getState().reconnectPersistedTerminals()
 
@@ -1567,7 +1508,24 @@ describe('reconnectPersistedTerminals', () => {
     // records daemon session IDs as tab-level ptyIds so connectPanePty
     // can pass them as sessionId to the daemon's createOrAttach.
     expect(s.tabsByWorktree[wt1][0].ptyId).toBe('old-pty-1')
-    expect(s.tabsByWorktree[wt2][0].ptyId).toBe('old-pty-2')
+    expect(s.tabsByWorktree[wt2][0].ptyId).toBeNull()
+    expect(s.ptyIdsByTabId.tab1).toEqual(['old-pty-1'])
+    expect(s.ptyIdsByTabId.tab2).toEqual([])
+    expect(
+      computeVisibleWorktreeIds(s.worktreesByRepo, [wt1, wt2], {
+        filterRepoIds: [],
+        showSleepingWorkspaces: false,
+        tabsByWorktree: s.tabsByWorktree,
+        ptyIdsByTabId: s.ptyIdsByTabId,
+        browserTabsByWorktree: s.browserTabsByWorktree,
+        hideDefaultBranchWorkspace: false,
+        hideAutomationGeneratedWorkspaces: false,
+        repoMap: new Map(s.repos.map((repo) => [repo.id, repo])),
+        workspaceHostScope: 'all',
+        defaultHostId: LOCAL_EXECUTION_HOST_ID,
+        worktreeLineageById: {}
+      })
+    ).toEqual([wt1])
     expect(s.pendingReconnectWorktreeIds).toEqual([])
     // No eager spawn — PTY creation deferred to pane mount
     expect((mockApi.pty as Record<string, unknown>).spawn).not.toHaveBeenCalled()
@@ -1858,6 +1816,65 @@ describe('reconnectPersistedTerminals', () => {
     expect(Object.values(bindings).sort()).toEqual(['daemon-session-A', 'daemon-session-B'])
     expect(s.workspaceSessionReady).toBe(true)
   })
+
+  it('does not advertise split-pane-only wake hints as hide-sleeping activity', async () => {
+    const store = createDaemonEnabledStore()
+    const wt1 = 'repo1::/path/wt1'
+
+    store.setState({
+      repos: [
+        { id: 'repo1', path: '/repo1', displayName: 'Repo 1', badgeColor: '#000', addedAt: 0 }
+      ],
+      worktreesByRepo: {
+        repo1: [makeWorktree({ id: wt1, repoId: 'repo1', path: '/path/wt1' })]
+      }
+    })
+
+    store.getState().hydrateWorkspaceSession({
+      activeRepoId: 'repo1',
+      activeWorktreeId: wt1,
+      activeTabId: 'tab1',
+      tabsByWorktree: {
+        [wt1]: [makeTab({ id: 'tab1', worktreeId: wt1, ptyId: null })]
+      },
+      terminalLayoutsByTabId: {
+        tab1: {
+          ...makeLayout(),
+          root: {
+            type: 'split',
+            direction: 'vertical',
+            first: { type: 'leaf', leafId: 'pane:1' },
+            second: { type: 'leaf', leafId: 'pane:3' }
+          },
+          ptyIdsByLeafId: { 'pane:1': 'daemon-session-A', 'pane:3': 'daemon-session-B' }
+        }
+      },
+      activeWorktreeIdsOnShutdown: []
+    })
+
+    expect(store.getState().pendingReconnectWorktreeIds).toEqual([])
+
+    await store.getState().reconnectPersistedTerminals()
+
+    const s = store.getState()
+    expect(s.terminalLayoutsByTabId.tab1?.ptyIdsByLeafId).toBeDefined()
+    expect(s.ptyIdsByTabId.tab1).toEqual([])
+    expect(
+      computeVisibleWorktreeIds(s.worktreesByRepo, [wt1], {
+        filterRepoIds: [],
+        showSleepingWorkspaces: false,
+        tabsByWorktree: s.tabsByWorktree,
+        ptyIdsByTabId: s.ptyIdsByTabId,
+        browserTabsByWorktree: s.browserTabsByWorktree,
+        hideDefaultBranchWorkspace: false,
+        hideAutomationGeneratedWorkspaces: false,
+        repoMap: new Map(s.repos.map((repo) => [repo.id, repo])),
+        workspaceHostScope: 'all',
+        defaultHostId: LOCAL_EXECUTION_HOST_ID,
+        worktreeLineageById: {}
+      })
+    ).toEqual([])
+  })
 })
 
 describe('hydrateEditorSession', () => {
@@ -1905,7 +1922,8 @@ describe('hydrateEditorSession', () => {
         ]
       },
       activeFileIdByWorktree: { [wt]: '/path/wt1/src/index.ts' },
-      activeTabTypeByWorktree: { [wt]: 'editor' }
+      activeTabTypeByWorktree: { [wt]: 'editor' },
+      markdownFrontmatterVisible: { '/path/wt1/README.md': true }
     })
 
     const s = store.getState()
@@ -1914,6 +1932,7 @@ describe('hydrateEditorSession', () => {
     expect(s.openFiles[0].mode).toBe('edit')
     expect(s.openFiles[0].isDirty).toBe(false)
     expect(s.openFiles[1].isPreview).toBe(true)
+    expect(s.markdownFrontmatterVisible).toEqual({ '/path/wt1/README.md': true })
     expect(s.activeFileId).toBe('/path/wt1/src/index.ts')
     expect(s.activeTabType).toBe('editor')
   })
@@ -1938,7 +1957,8 @@ describe('hydrateEditorSession', () => {
             relativePath: 'note.md',
             worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
             language: 'markdown',
-            runtimeEnvironmentId: null
+            runtimeEnvironmentId: null,
+            dirtyDraftContent: ''
           }
         ]
       },
@@ -1954,10 +1974,47 @@ describe('hydrateEditorSession', () => {
         id: fileId,
         filePath,
         worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
-        runtimeEnvironmentId: null
+        runtimeEnvironmentId: null,
+        isDirty: true
       })
     ])
+    expect(s.editorDrafts).toEqual({ [fileId]: '' })
+    expect(s.markdownFrontmatterVisible).toEqual({})
     expect(s.activeFileIdByWorktree[FLOATING_TERMINAL_WORKTREE_ID]).toBe(fileId)
+  })
+
+  it('migrates hydrated front-matter visibility to owner-qualified editor file ids', () => {
+    const store = createTestStore()
+    const filePath = '/orca/userData/floating-workspace/note.md'
+    const fileId = ownedEditorFileId(filePath, FLOATING_TERMINAL_WORKTREE_ID, null)
+
+    store.setState({ activeWorktreeId: FLOATING_TERMINAL_WORKTREE_ID })
+
+    store.getState().hydrateEditorSession({
+      activeRepoId: null,
+      activeWorktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+      activeTabId: null,
+      tabsByWorktree: {},
+      terminalLayoutsByTabId: {},
+      openFilesByWorktree: {
+        [FLOATING_TERMINAL_WORKTREE_ID]: [
+          {
+            filePath,
+            relativePath: 'note.md',
+            worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+            language: 'markdown',
+            runtimeEnvironmentId: null
+          }
+        ]
+      },
+      activeFileIdByWorktree: {
+        [FLOATING_TERMINAL_WORKTREE_ID]: filePath
+      },
+      activeTabTypeByWorktree: { [FLOATING_TERMINAL_WORKTREE_ID]: 'editor' },
+      markdownFrontmatterVisible: { [filePath]: true }
+    })
+
+    expect(store.getState().markdownFrontmatterVisible).toEqual({ [fileId]: true })
   })
 
   it('falls back to the floating workspace file id when duplicate paths are owner-qualified', () => {

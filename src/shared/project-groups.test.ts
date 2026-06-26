@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clearMissingProjectGroupMemberships,
   createProjectGroup,
+  getEffectiveProjectGroupManualRank,
   getNextProjectGroupOrder,
   getProjectGroupSubtreeIds,
   normalizeProjectGroupName,
@@ -71,6 +72,18 @@ describe('project-groups', () => {
     })
   })
 
+  it('preserves normalized execution ownership for persisted groups', () => {
+    const groups = normalizeProjectGroups([
+      { id: 'runtime', name: 'Runtime', tabOrder: 1, executionHostId: 'runtime:env-1' },
+      { id: 'local', name: 'Local', tabOrder: 2, executionHostId: 'local' },
+      { id: 'invalid', name: 'Invalid', tabOrder: 3, executionHostId: 'runtime:' }
+    ])
+
+    expect(groups.find((group) => group.id === 'runtime')?.executionHostId).toBe('runtime:env-1')
+    expect(groups.find((group) => group.id === 'local')?.executionHostId).toBe('local')
+    expect(groups.find((group) => group.id === 'invalid')?.executionHostId).toBeUndefined()
+  })
+
   it('clears repo memberships whose group no longer exists', () => {
     const groups = [createProjectGroup({ name: 'Known', createdFrom: 'manual', tabOrder: 0 })]
     const repos = clearMissingProjectGroupMemberships(
@@ -83,6 +96,20 @@ describe('project-groups', () => {
 
     expect(repos.find((entry) => entry.id === 'known')?.projectGroupId).toBe(groups[0].id)
     expect(repos.find((entry) => entry.id === 'missing')?.projectGroupId).toBeNull()
+  })
+
+  it('falls back to global repo order when projectGroupOrder is unset', () => {
+    const repoOrder = new Map([
+      ['a', 0],
+      ['b', 2]
+    ])
+
+    expect(
+      getEffectiveProjectGroupManualRank(repo({ id: 'a', projectGroupOrder: 5 }), repoOrder)
+    ).toBe(5)
+    expect(getEffectiveProjectGroupManualRank(repo({ id: 'a' }), repoOrder)).toBe(0)
+    expect(getEffectiveProjectGroupManualRank(repo({ id: 'b' }), repoOrder)).toBe(2000)
+    expect(getEffectiveProjectGroupManualRank(repo({ id: 'c' }), repoOrder, 1)).toBe(1000)
   })
 
   it('computes the next order inside a group independently from ungrouped repos', () => {
@@ -111,5 +138,21 @@ describe('project-groups', () => {
         )
       ].sort()
     ).toEqual(['child', 'grandchild', 'root'])
+  })
+
+  it('collects wide descendant groups without overflowing argument limits', () => {
+    const groups = [
+      { id: 'root', parentGroupId: null },
+      ...Array.from({ length: 130_000 }, (_, index) => ({
+        id: `child-${index}`,
+        parentGroupId: 'root'
+      }))
+    ]
+
+    const subtreeIds = getProjectGroupSubtreeIds(groups, 'root')
+
+    expect(subtreeIds.size).toBe(130_001)
+    expect(subtreeIds.has('root')).toBe(true)
+    expect(subtreeIds.has('child-129999')).toBe(true)
   })
 })

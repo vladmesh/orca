@@ -1,6 +1,7 @@
 import type { IDisposable, IParser, ITheme } from '@xterm/xterm'
 import type { PaneManager } from '@/lib/pane-manager/pane-manager'
 import type { GlobalSettings } from '../../../../shared/types'
+import { mode2031SequenceFor } from '../../../../shared/terminal-color-scheme-protocol'
 import { resolveTerminalFontWeights } from '../../../../shared/terminal-fonts'
 import { resolveTerminalLigaturesEnabled } from '../../../../shared/terminal-ligatures'
 import {
@@ -10,20 +11,17 @@ import {
 } from '@/lib/terminal-theme'
 import { buildFontFamily } from './layout-serialization'
 import { captureScrollState, restoreScrollState, safeFit } from '@/lib/pane-manager/pane-tree-ops'
-import { resolveTerminalCursorInactiveStyle } from '@/lib/pane-manager/pane-terminal-options'
+import {
+  normalizeTerminalFastScrollSensitivity,
+  normalizeTerminalScrollSensitivity,
+  resolveTerminalCursorInactiveStyle
+} from '@/lib/pane-manager/pane-terminal-options'
 import { getFitOverrideForPty } from '@/lib/pane-manager/mobile-fit-overrides'
 import type { PtyTransport } from './pty-transport'
 import type { EffectiveMacOptionAsAlt } from '@/lib/keyboard-layout/detect-option-as-alt'
 import { HEX_COLOR_RE } from '../../../../shared/color-validation'
 
-// Contour/Kitty "color-scheme update" protocol (DEC mode 2031 + CSI 997):
-// the terminal pushes `CSI ?997;1n` for dark and `CSI ?997;2n` for light to
-// subscribed TUIs. This helper is the single source of truth so the push
-// site in applyTerminalAppearance and the subscribe-time seed in the
-// lifecycle hook cannot drift.
-export function mode2031SequenceFor(mode: 'dark' | 'light'): string {
-  return mode === 'dark' ? '\x1b[?997;1n' : '\x1b[?997;2n'
-}
+export { mode2031SequenceFor }
 
 // Why Pick<IParser, ...> over a hand-rolled structural type: keeps the helper
 // tied to xterm's canonical signature so any upstream tightening (added
@@ -162,7 +160,19 @@ export function composeActiveTerminalTheme(
   if (!baseTheme) {
     return null
   }
-  let theme: ITheme = { ...baseTheme }
+  // Why: setting scrollbar.width enables xterm's overview ruler, whose border
+  // defaults to the foreground color and paints a bright vertical line beside
+  // the scrollbar. We only want the slimmer scrollbar, not the ruler chrome.
+  // Why: xterm's default slider alpha (~0.2) is nearly invisible on dark
+  // backgrounds; raise the contrast so the thumb reads. Placed before the
+  // spread so an explicit theme value still wins.
+  let theme: ITheme = {
+    overviewRulerBorder: 'transparent',
+    scrollbarSliderBackground: 'rgba(180, 180, 185, 0.4)',
+    scrollbarSliderHoverBackground: 'rgba(180, 180, 185, 0.6)',
+    scrollbarSliderActiveBackground: 'rgba(180, 180, 185, 0.8)',
+    ...baseTheme
+  }
   // Why: merge user-imported Ghostty color overrides on top of the resolved
   // base theme so individual colors can be tweaked without losing the rest.
   if (settings.terminalColorOverrides) {
@@ -220,7 +230,7 @@ export function applyTerminalAppearance(
     // bleeding in from a prior opacity setting that has since been reset.
     pane.terminal.options.allowTransparency =
       settings.terminalBackgroundOpacity !== undefined && settings.terminalBackgroundOpacity < 1
-    const cursorStyle = settings.terminalCursorStyle ?? 'bar'
+    const cursorStyle = settings.terminalCursorStyle ?? 'block'
     pane.terminal.options.cursorStyle = cursorStyle
     pane.terminal.options.cursorInactiveStyle = resolveTerminalCursorInactiveStyle(cursorStyle)
     pane.terminal.options.cursorBlink = settings.terminalCursorBlink
@@ -229,6 +239,12 @@ export function applyTerminalAppearance(
     pane.terminal.options.fontFamily = buildFontFamily(settings.terminalFontFamily)
     pane.terminal.options.fontWeight = terminalFontWeights.fontWeight
     pane.terminal.options.fontWeightBold = terminalFontWeights.fontWeightBold
+    pane.terminal.options.scrollSensitivity = normalizeTerminalScrollSensitivity(
+      settings.terminalScrollSensitivity
+    )
+    pane.terminal.options.fastScrollSensitivity = normalizeTerminalFastScrollSensitivity(
+      settings.terminalFastScrollSensitivity
+    )
     // Why: xterm's macOptionIsMeta only flips on the 'true' mode. 'left' and
     // 'right' are handled in the keydown policy (terminal-shortcut-policy),
     // which needs Option to stay composable at the xterm level for the

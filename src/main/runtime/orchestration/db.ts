@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- Why: the orchestration DB keeps schema creation, message CRUD, task DAG resolution, and dispatch context management in one class so transactional invariants (e.g. promoteReadyTasks running inside the same writer as updateTaskStatus) are enforced by locality. */
-import Database from 'better-sqlite3'
 import { randomBytes } from 'crypto'
+import Database from '../../sqlite/sync-database'
 import type {
   MessageType,
   MessagePriority,
@@ -14,6 +14,7 @@ import type {
   DecisionGateRow,
   CoordinatorRun
 } from './types'
+import { buildOrchestrationTaskDisplayMetadata } from '../../../shared/orchestration-task-display'
 
 export type {
   MessageType,
@@ -38,8 +39,9 @@ function generateId(prefix: string): string {
 // push-on-idle can distinguish queued-but-undelivered from user-acknowledged
 // messages without touching the `read` bit (check-wait PR). v3 → v4 records
 // the terminal that created a task so task-record worktree creation can infer
-// the parent workspace even when no dispatch context exists.
-const SCHEMA_VERSION = 4
+// the parent workspace even when no dispatch context exists. v4 → v5 adds
+// explicit task_title/display_name fields for orchestration worker UI labels.
+const SCHEMA_VERSION = 5
 
 export class OrchestrationDb {
   private db: Database.Database
@@ -84,6 +86,8 @@ export class OrchestrationDb {
         id            TEXT PRIMARY KEY,
         parent_id     TEXT,
         created_by_terminal_handle TEXT,
+        task_title    TEXT,
+        display_name  TEXT,
         spec          TEXT NOT NULL,
         status        TEXT NOT NULL DEFAULT 'pending'
           CHECK(status IN (
@@ -234,6 +238,14 @@ export class OrchestrationDb {
           this.db.exec(`ALTER TABLE tasks ADD COLUMN created_by_terminal_handle TEXT`)
         }
       }
+      if (current < 5) {
+        if (!this.hasColumn('tasks', 'task_title')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN task_title TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'display_name')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN display_name TEXT`)
+        }
+      }
       this.createUndeliveredInboxIndexIfPossible()
 
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
@@ -380,7 +392,15 @@ export class OrchestrationDb {
   // message for a handle regardless of read/delivered state; never touches the
   // read bit. Stale-handle safe: if the handle no longer exists, the query
   // just returns whatever historical rows remain (§3.3).
-  getAllMessagesForHandle(toHandle: string, limit = 100): MessageRow[] {
+  getAllMessagesForHandle(toHandle: string, limit = 100, types?: MessageType[]): MessageRow[] {
+    if (types && types.length > 0) {
+      const placeholders = types.map(() => '?').join(',')
+      return this.db
+        .prepare(
+          `SELECT * FROM messages WHERE to_handle = ? AND type IN (${placeholders}) ORDER BY sequence DESC LIMIT ?`
+        )
+        .all(toHandle, ...types, limit) as MessageRow[]
+    }
     return this.db
       .prepare('SELECT * FROM messages WHERE to_handle = ? ORDER BY sequence DESC LIMIT ?')
       .all(toHandle, limit) as MessageRow[]
@@ -409,6 +429,8 @@ export class OrchestrationDb {
 
   createTask(task: {
     spec: string
+    taskTitle?: string
+    displayName?: string
     deps?: string[]
     parentId?: string
     createdByTerminalHandle?: string
@@ -417,14 +439,21 @@ export class OrchestrationDb {
     const depsJson = JSON.stringify(task.deps ?? [])
     const hasDeps = (task.deps ?? []).length > 0
     const status: TaskStatus = hasDeps ? 'pending' : 'ready'
+    const display = buildOrchestrationTaskDisplayMetadata({
+      spec: task.spec,
+      taskTitle: task.taskTitle,
+      displayName: task.displayName
+    })
     this.db
       .prepare(
-        'INSERT INTO tasks (id, parent_id, created_by_terminal_handle, spec, status, deps) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO tasks (id, parent_id, created_by_terminal_handle, task_title, display_name, spec, status, deps) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         id,
         task.parentId ?? null,
         task.createdByTerminalHandle ?? null,
+        display.taskTitle || null,
+        display.displayName || null,
         task.spec,
         status,
         depsJson
@@ -461,7 +490,7 @@ export class OrchestrationDb {
     dispatch_id: string | null
   })[] {
     const whereClauses: string[] = []
-    const params: unknown[] = []
+    const params: Database.BindValue[] = []
     if (filter?.ready) {
       whereClauses.push("t.status = 'ready'")
     } else if (filter?.status) {
@@ -588,10 +617,24 @@ export class OrchestrationDb {
       .get(taskId) as DispatchContextRow | undefined
   }
 
+  getDispatchContextById(dispatchId: string): DispatchContextRow | undefined {
+    return this.db.prepare('SELECT * FROM dispatch_contexts WHERE id = ?').get(dispatchId) as
+      | DispatchContextRow
+      | undefined
+  }
+
   getActiveDispatchForTerminal(handle: string): DispatchContextRow | undefined {
     return this.db
       .prepare(
         "SELECT * FROM dispatch_contexts WHERE assignee_handle = ? AND status IN ('pending', 'dispatched') LIMIT 1"
+      )
+      .get(handle) as DispatchContextRow | undefined
+  }
+
+  getLatestDispatchForTerminal(handle: string): DispatchContextRow | undefined {
+    return this.db
+      .prepare(
+        'SELECT * FROM dispatch_contexts WHERE assignee_handle = ? ORDER BY rowid DESC LIMIT 1'
       )
       .get(handle) as DispatchContextRow | undefined
   }

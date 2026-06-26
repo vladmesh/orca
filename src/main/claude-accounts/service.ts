@@ -156,24 +156,13 @@ export class ClaudeAccountService {
       }
 
       const selection = normalizeClaudeRuntimeSelection(previousSettings)
-      const targetSelection = getClaudeSelectionTargetForAccount(account)
-      const outgoingAccountId = getSelectedClaudeAccountIdForTarget(
-        previousSettings,
-        targetSelection
-      )
       this.store.updateSettings({
         claudeManagedAccounts: [...previousSettings.claudeManagedAccounts, account],
-        activeClaudeManagedAccountId:
-          targetSelection.runtime === 'host' ? account.id : selection.host,
-        activeClaudeManagedAccountIdsByRuntime: setSelectedClaudeAccountIdForTarget(
-          selection,
-          account.id,
-          targetSelection
-        )
+        activeClaudeManagedAccountId: selection.host,
+        activeClaudeManagedAccountIdsByRuntime: selection
       })
       this.runtimeAuth.clearLastWrittenCredentialsJson(accountId)
-      await this.syncRuntimeAuthWithLivePtyGate(targetSelection)
-      await this.rateLimits.refreshForClaudeAccountChange(outgoingAccountId, targetSelection)
+      this.rateLimits.evictInactiveClaudeCache(accountId)
       return this.getSnapshot()
     } catch (error) {
       this.restoreClaudeSettings(previousSettings)
@@ -914,25 +903,35 @@ export class ClaudeAccountService {
           output = output.slice(-MAX_COMMAND_OUTPUT_CHARS)
         }
       }
+      let timeout: ReturnType<typeof setTimeout> | null = null
+      const cleanupListeners = (): void => {
+        if (timeout) {
+          clearTimeout(timeout)
+          timeout = null
+        }
+        child.stdout.off('data', appendOutput)
+        child.stderr.off('data', appendOutput)
+        child.off('error', onError)
+        child.off('close', onClose)
+      }
       const settle = (callback: () => void): void => {
         if (settled) {
           return
         }
         settled = true
-        clearTimeout(timeout)
+        cleanupListeners()
         callback()
       }
-      const timeout = setTimeout(() => {
+      const timeoutError = new Error('Claude sign-in took too long to finish.')
+      timeout = setTimeout(() => {
         child.kill()
-        settle(() => rejectPromise(new Error('Claude sign-in took too long to finish.')))
+        settle(() => rejectPromise(timeoutError))
       }, timeoutMs)
 
-      child.stdout.on('data', appendOutput)
-      child.stderr.on('data', appendOutput)
-      child.on('error', (error) => {
+      const onError = (error: Error): void => {
         settle(() => rejectPromise(error))
-      })
-      child.on('close', (code) => {
+      }
+      const onClose = (code: number | null): void => {
         settle(() => {
           if (code === 0 || options?.allowFailure) {
             resolvePromise(output)
@@ -947,7 +946,12 @@ export class ClaudeAccountService {
             )
           )
         })
-      })
+      }
+
+      child.stdout.on('data', appendOutput)
+      child.stderr.on('data', appendOutput)
+      child.on('error', onError)
+      child.on('close', onClose)
     })
   }
 

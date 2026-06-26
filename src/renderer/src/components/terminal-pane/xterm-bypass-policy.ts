@@ -16,6 +16,8 @@ export type XtermBypassEvent = {
   type: string
   key: string
   code?: string
+  keyCode?: number
+  isComposing?: boolean
   defaultPrevented?: boolean
   metaKey: boolean
   ctrlKey: boolean
@@ -31,6 +33,27 @@ export type XtermBypassOptions = {
   hasSelection: boolean
 }
 
+export type XtermImeKeyboardOptions = {
+  compositionActive: boolean
+}
+
+export const TERMINAL_INTERRUPT_INPUT = '\x03'
+const TERMINAL_MODIFIER_KEYS = new Set(['Alt', 'AltGraph', 'Control', 'Meta', 'Shift'])
+const TERMINAL_IME_OWNED_KEYS = new Set([
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'Backspace',
+  'Delete',
+  'End',
+  'Enter',
+  'Escape',
+  'Home',
+  'PageDown',
+  'PageUp'
+])
+
 function isSingleNonAsciiPrintableText(key: string): boolean {
   const chars = Array.from(key)
   if (chars.length !== 1) {
@@ -44,12 +67,78 @@ function isXtermHandledKeyEvent(type: string): boolean {
   return type === 'keydown' || type === 'keyup'
 }
 
+export function shouldSuppressTerminalImeKeyboardEvent(
+  event: XtermBypassEvent,
+  options: XtermImeKeyboardOptions = { compositionActive: false }
+): boolean {
+  if (!isXtermHandledKeyEvent(event.type)) {
+    return false
+  }
+  // Why: IMEs own Process-key / composing keystrokes. Letting xterm translate
+  // Backspace/Enter/etc. into PTY bytes makes TUIs delete committed CJK text
+  // while the user is only editing the preedit candidate.
+  return (
+    event.isComposing === true ||
+    event.keyCode === 229 ||
+    (options.compositionActive && TERMINAL_IME_OWNED_KEYS.has(event.key))
+  )
+}
+
+function isTerminalInterruptCKey(event: XtermBypassEvent): boolean {
+  const normalizedKey = event.key.toLowerCase()
+  const logicalKeyAvailable = normalizedKey !== '' && normalizedKey !== 'unidentified'
+  return logicalKeyAvailable ? normalizedKey === 'c' : event.code === 'KeyC' || event.keyCode === 67
+}
+
+function isPlainCtrlC(event: XtermBypassEvent): boolean {
+  return (
+    isTerminalInterruptCKey(event) &&
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey
+  )
+}
+
 function matchesClipboardBinding(
   binding: string,
   event: XtermBypassEvent,
   platform: NodeJS.Platform
 ): boolean {
   return keybindingMatchesInput(binding, event, platform)
+}
+
+/**
+ * Decide whether plain Ctrl+C should bypass xterm's kitty CSI-u encoder and
+ * be sent as ETX through Terminal.input() instead.
+ */
+export function shouldHandleTerminalInterruptKeyboardEvent(
+  event: XtermBypassEvent,
+  options: XtermBypassOptions
+): boolean {
+  if (!isXtermHandledKeyEvent(event.type) || !isPlainCtrlC(event)) {
+    return false
+  }
+
+  if (options.isMac) {
+    return true
+  }
+
+  return !options.hasSelection
+}
+
+export function shouldSuppressTerminalInterruptKeyup(event: XtermBypassEvent): boolean {
+  return (
+    event.type === 'keyup' &&
+    isTerminalInterruptCKey(event) &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey
+  )
+}
+
+export function shouldSuppressTerminalModifierKeyboardEvent(event: XtermBypassEvent): boolean {
+  return isXtermHandledKeyEvent(event.type) && TERMINAL_MODIFIER_KEYS.has(event.key)
 }
 
 /**
@@ -92,8 +181,12 @@ export function shouldBypassXtermKeyboardEvent(
 
   if (isMac) {
     // Why: window-level handlers already consume other Cmd chords before xterm
-    // sees them; this path covers native copy, which must bubble to Chromium.
-    return matchesClipboardBinding('Mod+C', event, 'darwin')
+    // sees them in Electron. Web clients still need paste to bubble to
+    // Chromium's native paste event instead of xterm's Kitty encoder.
+    return (
+      matchesClipboardBinding('Mod+C', event, 'darwin') ||
+      matchesClipboardBinding('Mod+V', event, 'darwin')
+    )
   }
 
   // Windows/Linux: standard clipboard bindings bubble; Ctrl+C only bubbles

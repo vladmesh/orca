@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import type { TerminalTab } from '../../../../shared/types'
@@ -60,6 +61,27 @@ function renderRow(agent: DashboardAgentRowData): string {
   )
 }
 
+function renderSendTargetRow(
+  props: Pick<
+    ComponentProps<typeof DashboardAgentRow>,
+    'sendTargetStatus' | 'sendTargetDisabledReason'
+  >
+): string {
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <DashboardAgentRow
+        agent={makeAgent()}
+        onDismiss={vi.fn()}
+        onActivate={vi.fn()}
+        now={NOW}
+        hideIdentityIcon
+        hideExpand
+        {...props}
+      />
+    </TooltipProvider>
+  )
+}
+
 function classAttributes(markup: string): string[] {
   return Array.from(markup.matchAll(/class="([^"]*)"/g), (match) => match[1])
 }
@@ -104,6 +126,26 @@ function classTokensForTaggedElement(markup: string, dataAttribute: string): str
 }
 
 describe('DashboardAgentRow', () => {
+  it('renders orchestration task preview instead of the raw dispatch preamble prompt', () => {
+    const markup = renderRow(
+      makeAgent(
+        {},
+        {
+          prompt: 'You are working inside Orca, a multi-agent IDE.',
+          orchestration: {
+            taskId: 'task-1',
+            dispatchId: 'ctx-1',
+            taskTitle: 'Checkout race',
+            displayName: 'Fix checkout race'
+          }
+        }
+      )
+    )
+
+    expect(markup).toContain('Fix checkout race')
+    expect(markup).not.toContain('You are working inside Orca')
+  })
+
   it('uses the hover background as the focused-pane row highlight', () => {
     const markup = renderToStaticMarkup(
       <TooltipProvider>
@@ -121,6 +163,57 @@ describe('DashboardAgentRow', () => {
 
     expect(markup).toContain('data-focused-agent-pane="true"')
     expect(classTokens(markup)).toContain('worktree-agent-row-hover')
+  })
+
+  it('marks eligible send-target rows with an inline send target button', () => {
+    const markup = renderSendTargetRow({ sendTargetStatus: 'eligible' })
+    const tokens = classTokens(markup)
+
+    expect(markup).toContain('data-agent-send-target="eligible"')
+    expect(tokens).not.toContain('worktree-agent-send-target')
+    expect(tokens).not.toContain('ring-offset-sidebar')
+    expect(tokens).toContain('worktree-agent-row-hover')
+    expect(markup).toContain('aria-label="Send to this agent"')
+    expect(tokens).toContain('worktree-agent-send-target-button')
+    expect(tokens).toContain('absolute')
+    expect(tokens).toContain('h-5')
+    expect(tokens).toContain('w-12')
+    expect(markup).toContain('lucide-send')
+    expect(markup).not.toContain('aria-label="Dismiss agent"')
+  })
+
+  it('marks disabled send-target rows as muted without an eligibility ring', () => {
+    const markup = renderSendTargetRow({
+      sendTargetStatus: 'disabled',
+      sendTargetDisabledReason: 'Terminal is no longer available'
+    })
+    const tokens = classTokens(markup)
+
+    expect(markup).toContain('data-agent-send-target="disabled"')
+    expect(markup).toContain('title="Terminal is no longer available • started 1m ago"')
+    expect(tokens).toContain('cursor-default')
+    expect(tokens).toContain('opacity-60')
+    expect(tokens).not.toContain('worktree-agent-send-target')
+    expect(tokens).not.toContain('ring-offset-sidebar')
+    expect(markup).not.toContain('aria-label="Send to this agent"')
+  })
+
+  it('marks sending rows with a non-clickable progress treatment', () => {
+    const markup = renderSendTargetRow({
+      sendTargetStatus: 'sending',
+      sendTargetDisabledReason: 'Sending...'
+    })
+    const tokens = classTokens(markup)
+
+    expect(markup).toContain('data-agent-send-target="sending"')
+    expect(markup).toContain('title="Sending... • started 1m ago"')
+    expect(tokens).not.toContain('worktree-agent-send-target')
+    expect(tokens).not.toContain('ring-offset-sidebar')
+    expect(tokens).toContain('worktree-agent-send-target-button')
+    expect(tokens).toContain('cursor-progress')
+    expect(tokens).toContain('opacity-75')
+    expect(markup).toContain('aria-label="Send to this agent"')
+    expect(markup).toContain('disabled=""')
   })
 
   it('scopes the timestamp and dismiss hover swap to the row-owned group', () => {
@@ -144,6 +237,24 @@ describe('DashboardAgentRow', () => {
     expect(dismissButtonClassTokens(markup)).toContain('group-hover/agent-row:opacity-100')
     expect(dismissButtonClassTokens(markup)).toContain('focus-visible:opacity-100')
     expect(classes.every((className) => !/\bgroup-hover:/.test(className))).toBe(true)
+  })
+
+  it('renders waiting rows with the amber permission color', () => {
+    const markup = renderRow(makeAgent({}, { state: 'waiting' }))
+    const tokens = classTokens(markup)
+
+    expect(markup).toContain('aria-label="Waiting for input"')
+    expect(tokens).toContain('bg-amber-500')
+    expect(tokens).not.toContain('bg-red-500')
+  })
+
+  it('keeps blocked rows red', () => {
+    const markup = renderRow(makeAgent({}, { state: 'blocked' }))
+    const tokens = classTokens(markup)
+
+    expect(markup).toContain('aria-label="Blocked"')
+    expect(tokens).toContain('bg-red-500')
+    expect(tokens).not.toContain('bg-amber-500')
   })
 
   it('keeps each row hover boundary inside an anonymous ancestor group', () => {
@@ -275,5 +386,26 @@ describe('DashboardAgentRow', () => {
     expect(markup).toContain('data-agent-lineage-parent-connector="true"')
     expect(classTokens(markup)).toContain('left-[13px]')
     expect(markup).toContain('aria-level="1"')
+  })
+
+  it('marks child-disclosure rows as lineage manager rows', () => {
+    const markup = renderToStaticMarkup(
+      <TooltipProvider>
+        <DashboardAgentRow
+          agent={makeAgent()}
+          onDismiss={vi.fn()}
+          onActivate={vi.fn()}
+          now={NOW}
+          hideIdentityIcon
+          hideExpand
+          childAgentCount={2}
+          childAgentsExpanded={false}
+          onToggleChildAgents={vi.fn()}
+        />
+      </TooltipProvider>
+    )
+
+    expect(classTokens(markup)).toContain('worktree-agent-lineage-parent-row')
+    expect(markup).toContain('aria-label="Show 2 child agents"')
   })
 })

@@ -3,8 +3,15 @@ export type ExpectedTeardownScope = 'none' | 'renderer-reload' | 'app-shutdown'
 
 const WINDOWS_CONTROL_TERMINATION_EXIT_CODES = new Set([0xc000013a, 0x40010004])
 const RECOVERABLE_CHILD_PROCESS_TYPES = new Set(['gpu'])
-const RECOVERABLE_UTILITY_SERVICE_NAMES = new Set(['network.mojom.NetworkService'])
-const RECOVERABLE_CHILD_PROCESS_REASONS = new Set(['crashed', 'killed'])
+const RECOVERABLE_UTILITY_SERVICE_NAMES = new Set([
+  'audio.mojom.AudioService',
+  'network.mojom.NetworkService',
+  // Why: Windows media/screen capture can churn this Chromium utility without
+  // taking down Orca; prompting users for those child exits is noise.
+  'video_capture.mojom.VideoCaptureService'
+])
+const RECOVERABLE_CHILD_PROCESS_REASONS = new Set(['abnormal-exit', 'crashed', 'killed'])
+const NON_RECOVERABLE_RENDERER_REASONS = new Set(['integrity-failure', 'launch-failed'])
 
 function isWindowsControlTerminationExitCode(exitCode: number | null): boolean {
   if (exitCode === null) {
@@ -56,8 +63,8 @@ export function shouldRecordProcessGoneCrash({
   exitCode: number | null
   expectedTeardown: ExpectedTeardownScope
 }): boolean {
-  // Why: GPU and Network Service exits are recoverable Chromium child-process
-  // churn; treating them as app crashes creates noisy user prompts.
+  // Why: GPU, Network Service, and Audio Service exits are recoverable Chromium
+  // child-process churn; treating them as app crashes creates noisy user prompts.
   if (isRecoverableChromiumChildProcess({ source, processType, serviceName, reason })) {
     return false
   }
@@ -86,6 +93,11 @@ export function shouldRecoverRendererAfterProcessGone({
   expectedTeardown: ExpectedTeardownScope
 }): boolean {
   if (expectedTeardown === 'app-shutdown') {
+    return false
+  }
+  // Why: these mean Chromium could not start or trust the renderer process;
+  // retrying the same BrowserWindow load can loop indefinitely on Windows.
+  if (NON_RECOVERABLE_RENDERER_REASONS.has(reason)) {
     return false
   }
   return !(reason === 'killed' && expectedTeardown === 'renderer-reload')

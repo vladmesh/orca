@@ -4,12 +4,14 @@ import {
   NATIVE_FILE_DROP_TARGET,
   hasNativeFileDragTypes
 } from '../../../../shared/native-file-drop'
+import { useMountedRef } from '@/hooks/useMountedRef'
 import { useAppStore } from '@/store'
 import {
   getSidebarProjectDropAffordance,
   isRemoteRuntimeActive,
   resolveSidebarProjectDropPath
 } from './sidebar-project-drop'
+import { translate } from '@/i18n/i18n'
 
 type SidebarProjectDropHandlers = {
   onDragEnter: (event: React.DragEvent<HTMLElement>) => void
@@ -28,6 +30,7 @@ export function useSidebarProjectDrop(): {
   const [isHandlingDrop, setIsHandlingDrop] = useState(false)
   const dragDepthRef = useRef(0)
   const remoteRuntimeActive = isRemoteRuntimeActive(settings)
+  const mountedRef = useMountedRef()
 
   const clearDragState = useCallback(() => {
     dragDepthRef.current = 0
@@ -50,13 +53,27 @@ export function useSidebarProjectDrop(): {
         return
       }
       if (pathResolution.status === 'multiple') {
-        toast.warning('Drop one folder at a time.')
+        toast.warning(
+          translate(
+            'auto.components.sidebar.useSidebarProjectDrop.c0315153d1',
+            'Drop one folder at a time.'
+          )
+        )
         return
       }
       if (remoteRuntimeActive) {
-        toast.error('Local folder drops are unavailable for server runtimes.', {
-          description: 'Use Add Project to enter a server path.'
-        })
+        toast.error(
+          translate(
+            'auto.components.sidebar.useSidebarProjectDrop.849ef13dc0',
+            'Local folder drops are unavailable for server runtimes.'
+          ),
+          {
+            description: translate(
+              'auto.components.sidebar.useSidebarProjectDrop.5ccb56c7be',
+              'Use Add Project to enter a host path.'
+            )
+          }
+        )
         return
       }
 
@@ -64,20 +81,38 @@ export function useSidebarProjectDrop(): {
       try {
         await window.api.fs.authorizeExternalPath({ targetPath: pathResolution.path })
         const stat = await window.api.fs.stat({ filePath: pathResolution.path })
+        if (!mountedRef.current) {
+          return
+        }
         if (!stat.isDirectory) {
-          toast.error('Drop a folder to add it as a project.')
+          toast.error(
+            translate(
+              'auto.components.sidebar.useSidebarProjectDrop.451a4638db',
+              'Drop a folder to add it as a project.'
+            )
+          )
           return
         }
         openModal('add-repo', { droppedLocalPath: pathResolution.path })
       } catch (error) {
-        toast.error('Could not add dropped folder.', {
-          description: error instanceof Error ? error.message : String(error)
-        })
+        if (mountedRef.current) {
+          toast.error(
+            translate(
+              'auto.components.sidebar.useSidebarProjectDrop.f34a286c0d',
+              'Could not add dropped folder.'
+            ),
+            {
+              description: error instanceof Error ? error.message : String(error)
+            }
+          )
+        }
       } finally {
-        setIsHandlingDrop(false)
+        if (mountedRef.current) {
+          setIsHandlingDrop(false)
+        }
       }
     },
-    [openModal, remoteRuntimeActive]
+    [mountedRef, openModal, remoteRuntimeActive]
   )
 
   useEffect(() => {

@@ -15,15 +15,22 @@ export type WorktreeDragLineageRow = {
   depth: number
 }
 
-export type WorktreeDragPreviewRect = {
-  worktreeId: string
-  groupIndex: number
-  top: number
-  bottom: number
-}
-
 function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+function appendWorktreeIds(target: string[], ids: readonly string[]): void {
+  // Why: generated workspace fleets can exceed V8's argument limit for
+  // `push(...ids)` while manual ordering still needs the full visible order.
+  for (const id of ids) {
+    target.push(id)
+  }
+}
+
+function insertWorktreeIds(target: string[], index: number, ids: readonly string[]): void {
+  const tail = target.splice(index)
+  appendWorktreeIds(target, ids)
+  appendWorktreeIds(target, tail)
 }
 
 export function expandDraggedWorktreeIdsForVisibleLineage(
@@ -101,7 +108,7 @@ export function moveWorktreeIdsWithinGroup(
   const remaining = groupIds.filter((id) => !draggedSet.has(id))
   const insertAt = Math.max(0, Math.min(remaining.length, boundedDropIndex - removedBeforeDrop))
   const next = remaining.slice()
-  next.splice(insertAt, 0, ...orderedDraggedIds)
+  insertWorktreeIds(next, insertAt, orderedDraggedIds)
   return next
 }
 
@@ -128,7 +135,7 @@ export function buildManualOrderUpdatesForVisibleGroups(args: {
     if (group.key === args.sourceGroupKey && !arraysEqual(ids, group.worktreeIds)) {
       changed = true
     }
-    orderedIds.push(...ids)
+    appendWorktreeIds(orderedIds, ids)
   }
 
   if (!changed) {
@@ -194,10 +201,10 @@ export function buildManualOrderUpdatesForGroupDrop(args: {
         }
       }
       ids = group.worktreeIds.filter((id) => !draggedSet.has(id))
-      ids.splice(
+      insertWorktreeIds(
+        ids,
         Math.max(0, Math.min(ids.length, boundedDropIndex - removedBeforeDrop)),
-        0,
-        ...orderedDraggedIds
+        orderedDraggedIds
       )
     } else {
       ids = group.worktreeIds.filter((id) => !draggedSet.has(id))
@@ -206,7 +213,7 @@ export function buildManualOrderUpdatesForGroupDrop(args: {
     if (!arraysEqual(ids, group.worktreeIds)) {
       changed = true
     }
-    orderedIds.push(...ids)
+    appendWorktreeIds(orderedIds, ids)
   }
 
   if (!changed) {
@@ -236,58 +243,4 @@ export function shouldWriteManualOrderForGroupDrop(args: {
     args.sourceGroupKeys.length > 0 &&
     args.sourceGroupKeys.every((sourceGroupKey) => sourceGroupKey === args.targetGroupKey)
   )
-}
-
-function getFallbackStride(rects: readonly WorktreeDragPreviewRect[]): number {
-  const sortedRects = [...rects].sort((a, b) => a.groupIndex - b.groupIndex)
-  const strides: number[] = []
-  for (let index = 1; index < sortedRects.length; index++) {
-    strides.push(sortedRects[index]!.top - sortedRects[index - 1]!.top)
-  }
-  if (strides.length > 0) {
-    strides.sort((a, b) => a - b)
-    return strides[Math.floor(strides.length / 2)]!
-  }
-  const firstRect = sortedRects[0]
-  return firstRect ? firstRect.bottom - firstRect.top : 0
-}
-
-export function buildWorktreeDragPreviewOffsets(args: {
-  groupIds: readonly string[]
-  draggedIds: readonly string[]
-  dropIndex: number
-  rects: readonly WorktreeDragPreviewRect[]
-}): Map<string, number> {
-  const nextIds = moveWorktreeIdsWithinGroup(args.groupIds, args.draggedIds, args.dropIndex)
-  if (arraysEqual(nextIds, args.groupIds)) {
-    return new Map()
-  }
-
-  const draggedSet = new Set(args.draggedIds)
-  const newIndexById = new Map<string, number>()
-  nextIds.forEach((id, index) => newIndexById.set(id, index))
-
-  const topByGroupIndex = new Map<number, number>()
-  for (const rect of args.rects) {
-    topByGroupIndex.set(rect.groupIndex, rect.top)
-  }
-
-  const fallbackStride = getFallbackStride(args.rects)
-  const offsets = new Map<string, number>()
-  for (const rect of args.rects) {
-    if (draggedSet.has(rect.worktreeId)) {
-      continue
-    }
-    const newIndex = newIndexById.get(rect.worktreeId)
-    if (newIndex === undefined) {
-      continue
-    }
-    const targetTop =
-      topByGroupIndex.get(newIndex) ?? rect.top + (newIndex - rect.groupIndex) * fallbackStride
-    const offset = targetTop - rect.top
-    if (Math.abs(offset) >= 0.5) {
-      offsets.set(rect.worktreeId, offset)
-    }
-  }
-  return offsets
 }

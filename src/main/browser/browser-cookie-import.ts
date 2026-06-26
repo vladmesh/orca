@@ -35,9 +35,32 @@ function getDiagLogPath(): string {
 function reasonWithDiagLog(reason: string): string {
   return `${reason} Details were written to ${getDiagLogPath()}.`
 }
-function describeImportError(err: unknown): string {
+const COOKIE_IMPORT_ERROR_SUMMARY_MAX_CHARS = 180
+const COOKIE_IMPORT_ERROR_SCAN_MAX_CHARS = 512
+
+// Why: imported cookie errors can include pasted or file-derived payloads;
+// diagnostics only need a short preview, not a full-string whitespace pass.
+export function summarizeCookieImportError(err: unknown): string {
   const raw = err instanceof Error && err.message ? err.message : String(err)
-  return raw.replace(/\s+/g, ' ').slice(0, 180)
+  let summary = ''
+  let previousWasWhitespace = false
+  const scanLimit = Math.min(raw.length, COOKIE_IMPORT_ERROR_SCAN_MAX_CHARS)
+  for (let index = 0; index < scanLimit; index += 1) {
+    const code = raw.charCodeAt(index)
+    if (code === 32 || (code >= 9 && code <= 13)) {
+      if (summary.length > 0 && !previousWasWhitespace) {
+        summary += ' '
+      }
+      previousWasWhitespace = true
+      continue
+    }
+    summary += raw.charAt(index)
+    if (summary.length >= COOKIE_IMPORT_ERROR_SUMMARY_MAX_CHARS) {
+      return summary.slice(0, COOKIE_IMPORT_ERROR_SUMMARY_MAX_CHARS)
+    }
+    previousWasWhitespace = false
+  }
+  return summary
 }
 function diag(msg: string): void {
   const line = `[${new Date().toISOString()}] ${msg}\n`
@@ -173,6 +196,17 @@ function resolveCookiesPath(profileDir: string): string | null {
   return null
 }
 
+function isSafeBrowserProfileDirectory(directory: string): boolean {
+  return (
+    directory.length > 0 &&
+    directory !== '.' &&
+    !directory.includes('\0') &&
+    !directory.includes('/') &&
+    !directory.includes('\\') &&
+    !directory.includes('..')
+  )
+}
+
 // Why: Chrome's Local State JSON contains profile.info_cache which maps profile
 // directory names (e.g. "Default", "Profile 1") to metadata including the
 // user-visible display name. This lets us show human-readable names in the picker.
@@ -190,6 +224,10 @@ function discoverProfiles(browserRoot: string): BrowserProfile[] {
     }
     const profiles: BrowserProfile[] = []
     for (const [dir, info] of Object.entries(infoCache)) {
+      // Why: Local State is external metadata, but profile dirs become path segments.
+      if (!isSafeBrowserProfileDirectory(dir)) {
+        continue
+      }
       const profileName = (info as { name?: string })?.name ?? dir
       profiles.push({ name: profileName, directory: dir })
     }
@@ -362,6 +400,9 @@ export function selectBrowserProfile(
   browser: DetectedBrowser,
   profileDirectory: string
 ): DetectedBrowser | null {
+  if (!isSafeBrowserProfileDirectory(profileDirectory)) {
+    return null
+  }
   if (browser.family === 'firefox') {
     const profilesRoot = firefoxProfilesRoot()
     if (!profilesRoot) {
@@ -726,7 +767,9 @@ export function getUserAgentForBrowser(
       const v = readBrowserVersion('/Applications/Comet.app')
       return v ? `Mozilla/5.0 (${platform}) ${chromeBase} Chrome/${v} Safari/537.36` : null
     }
-    default:
+    case 'firefox':
+    case 'safari':
+    case 'manual':
       return null
   }
 }
@@ -1119,9 +1162,17 @@ function decodeSafariBinaryCookies(buffer: Buffer): ValidatedCookie[] {
   for (const pageSize of pageSizes) {
     const page = buffer.subarray(cursor, cursor + pageSize)
     cursor += pageSize
-    cookies.push(...decodeSafariPage(page))
+    appendSafariCookies(cookies, decodeSafariPage(page))
   }
   return cookies
+}
+
+function appendSafariCookies(target: ValidatedCookie[], cookies: readonly ValidatedCookie[]): void {
+  // Why: Safari binary cookie pages can contain generated-size cookie lists;
+  // spreading a decoded page into push can exceed JavaScript's argument limit.
+  for (const cookie of cookies) {
+    target.push(cookie)
+  }
 }
 
 function decodeSafariPage(page: Buffer): ValidatedCookie[] {
@@ -1740,7 +1791,7 @@ export async function importCookiesFromBrowser(
     return {
       ok: false,
       reason: reasonWithDiagLog(
-        `Could not import cookies from ${browser.label}: ${describeImportError(err)}.`
+        `Could not import cookies from ${browser.label}: ${summarizeCookieImportError(err)}.`
       )
     }
   }

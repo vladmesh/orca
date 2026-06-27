@@ -17459,6 +17459,20 @@ export class OrcaRuntimeService {
     return this.getTerminalHandleForPaneKey(paneKey) ?? undefined
   }
 
+  getAgentStatusLaunchConfigForPaneKey(
+    paneKey: string,
+    args?: { launchToken?: string }
+  ): SleepingAgentLaunchConfig | undefined {
+    const pty = this.getPtyRecordForPaneKey(paneKey)
+    if (!pty?.launchConfig) {
+      return undefined
+    }
+    if (pty.launchToken === null || pty.launchToken !== args?.launchToken) {
+      return undefined
+    }
+    return copySleepingAgentLaunchConfig(pty.launchConfig)
+  }
+
   private buildAgentOrchestrationByPaneKey():
     | Record<string, AgentStatusOrchestrationContext>
     | undefined {
@@ -17564,6 +17578,23 @@ export class OrcaRuntimeService {
     for (const pty of this.ptysById.values()) {
       if (pty.paneKey === paneKey) {
         return this.issuePtyHandle(pty)
+      }
+    }
+    return null
+  }
+
+  private getPtyRecordForPaneKey(paneKey: string): RuntimePtyWorktreeRecord | null {
+    const parsed = parsePaneKey(paneKey)
+    if (parsed) {
+      const leaf = this.leaves.get(this.getLeafKey(parsed.tabId, parsed.leafId))
+      const pty = leaf?.ptyId ? this.ptysById.get(leaf.ptyId) : undefined
+      if (pty) {
+        return pty
+      }
+    }
+    for (const pty of this.ptysById.values()) {
+      if (pty.paneKey === paneKey) {
+        return pty
       }
     }
     return null

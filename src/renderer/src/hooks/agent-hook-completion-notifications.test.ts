@@ -46,6 +46,10 @@ type MockStoreState = {
   getAgentLaunchConfigForStatusEntry: (entry: {
     paneKey: string
   }) => { agentArgs: string; agentEnv: Record<string, string> } | undefined
+  getAgentLaunchConfigForStatusMetadata: (metadata: {
+    paneKey: string
+    launchToken?: string
+  }) => { agentArgs: string; agentEnv: Record<string, string> } | undefined
 }
 
 let mockStoreState: MockStoreState
@@ -114,7 +118,11 @@ describe('agent hook completion notifications', () => {
       agentLaunchConfigByPaneKey: {},
       agentStatusByPaneKey: {},
       getAgentLaunchConfigForStatusEntry: (entry) =>
-        mockStoreState.agentLaunchConfigByPaneKey[entry.paneKey]?.launchConfig
+        mockStoreState.agentLaunchConfigByPaneKey[entry.paneKey]?.launchConfig,
+      getAgentLaunchConfigForStatusMetadata: (metadata) =>
+        metadata.launchToken
+          ? mockStoreState.agentLaunchConfigByPaneKey[metadata.paneKey]?.launchConfig
+          : undefined
     }
   })
 
@@ -458,7 +466,7 @@ describe('agent hook completion notifications', () => {
     expect(dispatchTerminalNotification).not.toHaveBeenCalled()
   })
 
-  it('does not notify for Codex auto-approved permission requests', async () => {
+  it('fails open for Codex auto-approved permission requests without launch proof', async () => {
     seedCodexPaneLaunchConfig(paneKey, YOLO_TUI_AGENT_ARGS.codex ?? '')
     const { observeAgentHookCompletionForNotification } =
       await import('./agent-hook-completion-notifications')
@@ -480,7 +488,7 @@ describe('agent hook completion notifications', () => {
       }
     })
 
-    expect(dispatchTerminalNotification).not.toHaveBeenCalled()
+    expect(dispatchTerminalNotification).toHaveBeenCalledTimes(1)
   })
 
   it('still notifies for manual Codex permission requests', async () => {
@@ -516,7 +524,7 @@ describe('agent hook completion notifications', () => {
     )
   })
 
-  it('does not notify for Codex auto-approved blocked permission requests', async () => {
+  it('fails open for Codex auto-approved blocked permission requests without launch proof', async () => {
     seedCodexPaneLaunchConfig(paneKey, YOLO_TUI_AGENT_ARGS.codex ?? '')
     const { observeAgentHookCompletionForNotification } =
       await import('./agent-hook-completion-notifications')
@@ -538,7 +546,7 @@ describe('agent hook completion notifications', () => {
       }
     })
 
-    expect(dispatchTerminalNotification).not.toHaveBeenCalled()
+    expect(dispatchTerminalNotification).toHaveBeenCalledTimes(1)
   })
 
   it('suppresses an internal milestone completion when hook work resumes before quiet', async () => {

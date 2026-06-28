@@ -21,16 +21,14 @@ import {
   countUnstagedEntries,
   getStageablePaths,
   getUnstageablePaths,
-  isMobileGitDiscardableEntry,
-  isMobileGitStageableEntry,
   type MobileGitStatusEntry
 } from './mobile-git-status'
 import { getMobileCommitFailureStagedEntries } from './mobile-commit-failure-recovery'
 import { useMobileSourceControlCommitFailure } from './use-mobile-source-control-commit-failure'
 import {
+  buildMobileGitStatusEntryViews,
   formatBranchLabel,
-  type MobileBranchEntryView,
-  type MobileGitStatusEntryView
+  type MobileBranchEntryView
 } from './mobile-source-control-screen-state'
 
 type MobileGitLocalBranches = RuntimeGitLocalBranches
@@ -42,11 +40,21 @@ export type MobileSourceControlStateParams = {
   origin: string
   embedded: boolean
   onRequestClose?: () => void
+  onFileOpenStart?: () => void
   onOpenedFileDiff?: (relativePath: string) => void
 }
 
 export function useMobileSourceControlState(params: MobileSourceControlStateParams) {
-  const { hostId, worktreeId, name, origin, embedded, onRequestClose, onOpenedFileDiff } = params
+  const {
+    hostId,
+    worktreeId,
+    name,
+    origin,
+    embedded,
+    onRequestClose,
+    onFileOpenStart,
+    onOpenedFileDiff
+  } = params
   const insets = useSafeAreaInsets()
   const { client, state: connState } = useHostClient(hostId)
   const forceReconnect = useForceReconnect()
@@ -97,6 +105,7 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     origin,
     embedded,
     onRequestClose,
+    onFileOpenStart,
     onOpenedFileDiff,
     branchCompareState,
     mountedRef,
@@ -106,19 +115,7 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
 
   const status = screenState.kind === 'ready' ? screenState.status : null
   const entries = status?.entries ?? []
-  const derivedEntries = useMemo<MobileGitStatusEntryView[]>(
-    () =>
-      entries.map((entry) => ({
-        ...entry,
-        canDiscard: isMobileGitDiscardableEntry(entry),
-        canOpen: entry.status !== 'deleted' && entry.conflictStatus !== 'unresolved',
-        canStage: isMobileGitStageableEntry(entry),
-        discardActionId: `discard:${entry.path}`,
-        stageActionId: `stage:${entry.path}`,
-        unstageActionId: `unstage:${entry.path}`
-      })),
-    [entries]
-  )
+  const derivedEntries = useMemo(() => buildMobileGitStatusEntryViews(entries), [entries])
   const sections = useMemo(() => buildMobileSourceControlSections(derivedEntries), [derivedEntries])
   const branchCompareResult = branchCompareState.kind === 'ready' ? branchCompareState.result : null
   const branchCompareSection = useMemo(

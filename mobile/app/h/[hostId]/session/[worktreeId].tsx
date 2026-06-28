@@ -3258,10 +3258,17 @@ export default function SessionScreen() {
   )
 
   const handleOpenedFileDiffActivationSeqRef = useRef(0)
+  // Active tab captured at tap time (before the openDiff RPC). Capturing it when
+  // the diff finishes opening would misread a tab the user switched to mid-RPC
+  // as the tap-time tab, letting the retry steal focus back to the diff.
+  const fileOpenStartActiveTabIdRef = useRef<string | null>(null)
+  const handleFileOpenStart = useCallback(() => {
+    fileOpenStartActiveTabIdRef.current = activeSessionTabIdRef.current
+  }, [])
   const handleOpenedFileDiff = useCallback(
     (relativePath: string) => {
       const activationSeq = ++handleOpenedFileDiffActivationSeqRef.current
-      const activeTabIdAtTap = activeSessionTabIdRef.current
+      const activeTabIdAtTap = fileOpenStartActiveTabIdRef.current
 
       let activated = false
       const activateOpenedTab = async (): Promise<void> => {
@@ -5178,6 +5185,7 @@ export default function SessionScreen() {
               branchContextLoaded={prContextLoaded && prRepoContextLoaded}
               availableWidth={sessionContentRowWidth}
               onRequestClose={() => setActivePanel(null)}
+              onFileOpenStart={handleFileOpenStart}
               onOpenedFileDiff={handleOpenedFileDiff}
             />
           )}

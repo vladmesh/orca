@@ -24,6 +24,7 @@ type Props = {
   branchContextLoaded: boolean
   availableWidth: number
   onRequestClose: () => void
+  onFileOpenStart?: () => void
   onOpenedFileDiff?: (relativePath: string) => void
 }
 
@@ -48,6 +49,7 @@ export function SessionDockColumn({
   branchContextLoaded,
   availableWidth,
   onRequestClose,
+  onFileOpenStart,
   onOpenedFileDiff
 }: Props) {
   const { dockWidth, panHandlers } = useMobileDockResize(availableWidth)
@@ -69,6 +71,7 @@ export function SessionDockColumn({
         isGithubRepo={isGithubRepo}
         branchContextLoaded={branchContextLoaded}
         onRequestClose={onRequestClose}
+        onFileOpenStart={onFileOpenStart}
         onOpenedFileDiff={onOpenedFileDiff}
       />
     </View>
@@ -90,6 +93,7 @@ const DockPanelContent = memo(function DockPanelContent({
   isGithubRepo,
   branchContextLoaded,
   onRequestClose,
+  onFileOpenStart,
   onOpenedFileDiff
 }: DockPanelContentProps) {
   if (activePanel === 'sourceControl') {
@@ -101,6 +105,7 @@ const DockPanelContent = memo(function DockPanelContent({
         origin="session"
         embedded
         onRequestClose={onRequestClose}
+        onFileOpenStart={onFileOpenStart}
         onOpenedFileDiff={onOpenedFileDiff}
       />
     )

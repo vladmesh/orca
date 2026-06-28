@@ -29,6 +29,10 @@ type Params = {
   origin: string
   embedded: boolean
   onRequestClose?: () => void
+  // Fired synchronously at tap time (before the openDiff RPC) so the session can
+  // snapshot the active tab then — capturing it post-await would misread a tab
+  // the user switched to during the RPC window as the tap-time tab.
+  onFileOpenStart?: () => void
   onOpenedFileDiff?: (relativePath: string) => void
   branchCompareState: MobileBranchCompareState
   mountedRef: MutableRefObject<boolean>
@@ -48,6 +52,7 @@ export function useMobileSourceControlOpeners(params: Params) {
     origin,
     embedded,
     onRequestClose,
+    onFileOpenStart,
     onOpenedFileDiff,
     branchCompareState,
     mountedRef,
@@ -95,6 +100,10 @@ export function useMobileSourceControlOpeners(params: Params) {
           )
           return
         }
+        // Snapshot the active tab now, at tap time, before the openDiff RPC —
+        // the session uses it to avoid stealing focus if the user switches tabs
+        // during the RPC window.
+        onFileOpenStart?.()
         let response = await client.sendRequest('files.openDiff', {
           worktree: `id:${worktreeId}`,
           relativePath: entry.path,
@@ -117,9 +126,11 @@ export function useMobileSourceControlOpeners(params: Params) {
         // Why: when launched from the session screen, opening a file dismisses
         // this surface back to the session. In embedded mode there is nothing
         // to pop (the panel docks beside the terminal), so close the dock
-        // instead of calling router.back().
+        // instead of calling router.back() — falling back to router.back() when
+        // no close handler is wired, mirroring MobileSourceControlPanel, so the
+        // panel never sits on top of the activated diff tab.
         if (embedded) {
-          onRequestClose?.()
+          ;(onRequestClose ?? (() => router.back()))()
         } else {
           router.back()
         }
@@ -146,6 +157,7 @@ export function useMobileSourceControlOpeners(params: Params) {
       hostId,
       mountedRef,
       name,
+      onFileOpenStart,
       onOpenedFileDiff,
       onRequestClose,
       origin,

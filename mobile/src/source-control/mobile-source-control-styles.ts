@@ -180,7 +180,7 @@ const baseStyles = StyleSheet.create({
   createPrButton: {
     minHeight: 42,
     borderRadius: radii.button,
-    backgroundColor: colors.accentBlue,
+    backgroundColor: colors.accentBlueCta,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',

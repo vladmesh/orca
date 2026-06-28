@@ -16,6 +16,7 @@ export type MobileSourceControlPanelProps = {
   origin?: string
   embedded?: boolean
   onRequestClose?: () => void
+  onFileOpenStart?: () => void
   onOpenedFileDiff?: (relativePath: string) => void
 }
 
@@ -26,6 +27,7 @@ export function MobileSourceControlPanel({
   origin = '',
   embedded = false,
   onRequestClose,
+  onFileOpenStart,
   onOpenedFileDiff
 }: MobileSourceControlPanelProps) {
   const state = useMobileSourceControlState({
@@ -35,6 +37,7 @@ export function MobileSourceControlPanel({
     origin,
     embedded,
     onRequestClose,
+    onFileOpenStart,
     onOpenedFileDiff
   })
   const actionSheetActions = useMobileSourceControlActionSheet(state)

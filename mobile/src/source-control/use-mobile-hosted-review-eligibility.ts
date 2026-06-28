@@ -73,6 +73,7 @@ export function useMobileHostedReviewEligibility(
     behind,
     hasUncommittedChanges
   } = input
+  const shouldFetch = shouldFetchMobileHostedReviewEligibility({ client, connState, branch })
   const [state, setState] = useState<MobileCreatePrEligibilityState>({ kind: 'idle' })
   const generationRef = useRef(0)
   const currentIdentityRef = useRef('')
@@ -103,7 +104,7 @@ export function useMobileHostedReviewEligibility(
         currentIdentity: currentIdentityRef.current
       })
 
-    if (!shouldFetchMobileHostedReviewEligibility({ client, connState, branch })) {
+    if (!shouldFetch) {
       if (isCurrent()) {
         setState({ kind: 'idle' })
       }
@@ -150,8 +151,13 @@ export function useMobileHostedReviewEligibility(
     hasUpstream,
     key.fetch,
     key.identity,
+    shouldFetch,
     worktreeId
   ])
 
-  return state
+  // Why: gate on shouldFetch so a disconnect/client-loss hides a stale `ready`
+  // snapshot in the same render, before the effect posts `idle` — otherwise the
+  // Create PR button could stay enabled for one paint after the worktree is
+  // no longer fetchable.
+  return shouldFetch ? state : { kind: 'idle' }
 }

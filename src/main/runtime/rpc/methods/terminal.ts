@@ -410,11 +410,18 @@ function requestedSnapshotScrollbackCandidates(requestedRows: number | undefined
 async function serializeBudgetedRequestedSnapshot(
   runtime: OrcaRuntimeService,
   ptyId: string,
-  scrollbackRows: number | undefined
+  scrollbackRows: number | undefined,
+  options: { altScreenPreservesScrollback?: boolean } = {}
 ): Promise<SerializedSnapshot> {
   const requestedRows = scrollbackRows ?? 0
   for (const rows of requestedSnapshotScrollbackCandidates(scrollbackRows)) {
-    const serialized = await runtime.serializeTerminalBuffer(ptyId, { scrollbackRows: rows })
+    // Why: forward the caller's intent verbatim — desktop restore opts in to keep
+    // pre-TUI scrollback, mobile omits the flag so its replay path stays unchanged.
+    const requestOptions = {
+      scrollbackRows: rows,
+      ...(options.altScreenPreservesScrollback ? { altScreenPreservesScrollback: true } : {})
+    }
+    const serialized = await runtime.serializeTerminalBuffer(ptyId, requestOptions)
     if (!serialized) {
       return null
     }
@@ -1328,7 +1335,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
           let serialized = await serializeBudgetedRequestedSnapshot(
             runtime,
             stream.ptyId,
-            scrollbackRows
+            scrollbackRows,
+            { altScreenPreservesScrollback: !stream.isMobile }
           )
           if (closed || streams.get(stream.streamId) !== stream) {
             return
@@ -1344,7 +1352,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
             serialized = await serializeBudgetedRequestedSnapshot(
               runtime,
               stream.ptyId,
-              scrollbackRows
+              scrollbackRows,
+              { altScreenPreservesScrollback: !stream.isMobile }
             )
             if (closed || streams.get(stream.streamId) !== stream) {
               return

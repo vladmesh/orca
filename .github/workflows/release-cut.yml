@@ -1094,6 +1094,51 @@ jobs:
           }
           $signature.SignerCertificate | Format-List Subject,Issuer,NotBefore,NotAfter,Thumbprint
 
+      # Why: Smart App Control (issue #6487) evaluates the inner Orca.exe, not
+      # just the outer installer. SignPath must be configured to RECURSIVELY
+      # sign nested PE files — its "github-actions-windows-installer" artifact
+      # configuration has to declare the inner Orca.exe (inside app-64.7z) as a
+      # signable element. That config lives in the SignPath dashboard, not this
+      # repo. This step is the release gate that fails if recursive signing did
+      # not actually land on Orca.exe, so an unsigned inner binary cannot ship.
+      - name: Verify signed inner Orca.exe (Smart App Control prerequisite)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $extractRoot = Join-Path $env:RUNNER_TEMP 'inner-exe-verify'
+          if (Test-Path -LiteralPath $extractRoot) {
+            Remove-Item -LiteralPath $extractRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+
+          # Why: electron-builder NSIS installers embed the packaged app in a
+          # nested app-64.7z; 7-Zip (preinstalled on windows runners) unpacks the
+          # NSIS shell first, then the inner 7z, exposing Orca.exe on disk.
+          # Why: native commands do not honor $ErrorActionPreference, so check
+          # $LASTEXITCODE explicitly to surface a failed extraction clearly.
+          & 7z x 'dist/orca-windows-setup.exe' "-o$extractRoot" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "7z failed to extract the NSIS installer (exit $LASTEXITCODE)."
+          }
+          $innerArchive = Get-ChildItem -Path $extractRoot -Recurse -File -Filter 'app-64.7z' | Select-Object -First 1
+          if ($null -ne $innerArchive) {
+            $appRoot = Join-Path $extractRoot 'app'
+            & 7z x $innerArchive.FullName "-o$appRoot" -y | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "7z failed to extract the inner app-64.7z payload (exit $LASTEXITCODE)."
+            }
+          }
+
+          $innerExe = Get-ChildItem -Path $extractRoot -Recurse -File -Filter 'Orca.exe' | Select-Object -First 1
+          if ($null -eq $innerExe) {
+            throw 'Could not locate inner Orca.exe inside the NSIS installer payload.'
+          }
+
+          node config/scripts/verify-windows-inner-signature.mjs $innerExe.FullName
+        env:
+          ORCA_WINDOWS_EXPECTED_SIGNER: SignPath Foundation
+
       - name: Publish signed Windows release artifacts
         if: matrix.platform == 'win'
         uses: nick-fields/retry@v4

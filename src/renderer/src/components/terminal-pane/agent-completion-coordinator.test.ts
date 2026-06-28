@@ -1239,6 +1239,45 @@ describe('agent completion coordinator', () => {
     )
   })
 
+  it('cancels a pending done timer when a suppressed attention state arrives before the quiet window', () => {
+    // Why: a suppressed Codex auto-approval pause must still cancel a provisional
+    // 'done' so the quiet-window timer never fires a false completion notification.
+    const dispatchCompletion = vi.fn()
+    const dispatchAttention = vi.fn()
+    const coordinator = createAgentCompletionCoordinator({
+      paneKey: 'tab-1:leaf-1',
+      getPtyId: () => 'pty-1',
+      getSettings: () => null,
+      inspectProcess: vi.fn(),
+      dispatchCompletion,
+      dispatchAttention,
+      isLive: () => true,
+      shouldSuppressHookCompletion: (payload) =>
+        payload.state === 'waiting' || payload.state === 'blocked'
+    })
+
+    const turn = {
+      prompt: 'implement notifications',
+      agentType: 'codex' as const
+    }
+
+    coordinator.observeHookStatus({ state: 'working', ...turn })
+    coordinator.observeHookStatus({ state: 'done', ...turn, lastAssistantMessage: 'Done.' })
+    expect(coordinator.hasPendingHookDoneCompletion()).toBe(true)
+
+    coordinator.observeHookStatus({
+      state: 'waiting',
+      ...turn,
+      toolName: 'exec_command',
+      toolInput: 'git status'
+    })
+    expect(coordinator.hasPendingHookDoneCompletion()).toBe(false)
+    vi.advanceTimersByTime(HOOK_DONE_QUIET_MS)
+
+    expect(dispatchCompletion).not.toHaveBeenCalled()
+    expect(dispatchAttention).not.toHaveBeenCalled()
+  })
+
   it('keeps a generic title completion pending long enough for the first remote inspection', async () => {
     const inspection = createDeferred<RuntimeTerminalProcessInspection>()
     const dispatchCompletion = vi.fn()

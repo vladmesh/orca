@@ -228,8 +228,9 @@ export function applyTerminalAppearance(
     // Why: xterm's allowTransparency has measurable rendering cost, so clear
     // it explicitly when opacity is at (or above) 1 to avoid a stale `true`
     // bleeding in from a prior opacity setting that has since been reset.
-    pane.terminal.options.allowTransparency =
+    const transparencyEnabled =
       settings.terminalBackgroundOpacity !== undefined && settings.terminalBackgroundOpacity < 1
+    pane.terminal.options.allowTransparency = transparencyEnabled
     const cursorStyle = settings.terminalCursorStyle ?? 'block'
     pane.terminal.options.cursorStyle = cursorStyle
     pane.terminal.options.cursorInactiveStyle = resolveTerminalCursorInactiveStyle(cursorStyle)
@@ -259,6 +260,11 @@ export function applyTerminalAppearance(
     // separate hook and lets live toggles (settings change, font swap)
     // land immediately.
     manager.setPaneLigaturesEnabled(pane.id, ligaturesEnabled)
+    // Why call unconditionally (like setPaneLigaturesEnabled above): the
+    // manager helper records the transparency flag and is a no-op when the
+    // renderer already matches, so it flips WebGL<->DOM the moment the opacity
+    // slider crosses 1 — keeping the live-toggle behavior this file documents.
+    manager.setPaneTransparency(pane.id, transparencyEnabled)
     try {
       const state = captureScrollState(pane.terminal)
       safeFit(pane)

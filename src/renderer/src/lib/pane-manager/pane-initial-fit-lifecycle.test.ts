@@ -17,6 +17,7 @@ function createPane(pendingInitialFitRafId: number | null): ManagedPaneInternal 
     linkTooltip: {} as never,
     terminalGpuAcceleration: 'off',
     gpuRenderingEnabled: false,
+    terminalTransparencyEnabled: false,
     webglAttachmentDeferred: false,
     webglDisabledAfterContextLoss: false,
     hasComplexScriptOutput: false,

@@ -16,6 +16,16 @@ export function resetTerminalWebglSuggestion(): void {
 }
 
 export function shouldUseTerminalWebgl(pane: ManagedPaneInternal): boolean {
+  // Why: xterm's WebGL renderer re-blends semi-transparent per-cell backgrounds
+  // over the retained framebuffer on partial redraws, so transparency makes the
+  // background flicker/accumulate alpha on every output update (#6491). DOM
+  // rendering composites the full background each frame, so force it here. This
+  // sits before the gpuAcceleration === 'on' check so an explicit GPU 'on'
+  // setting still yields to transparency — the flicker is a correctness bug,
+  // not a perf preference.
+  if (pane.terminalTransparencyEnabled) {
+    return false
+  }
   if (pane.terminalGpuAcceleration === 'on') {
     return true
   }

@@ -60,6 +60,7 @@ function createPane(bufferType: 'normal' | 'alternate'): {
     linkTooltip: {} as never,
     terminalGpuAcceleration: 'auto',
     gpuRenderingEnabled: true,
+    terminalTransparencyEnabled: false,
     webglAttachmentDeferred: false,
     webglDisabledAfterContextLoss: false,
     hasComplexScriptOutput: false,

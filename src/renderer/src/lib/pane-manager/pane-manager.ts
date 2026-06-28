@@ -34,6 +34,7 @@ import {
   resetPaneWebglTextureAtlases,
   resumePaneRendering,
   setPaneGpuRenderingState,
+  setPaneTerminalTransparency,
   suspendPaneRendering
 } from './pane-rendering-control'
 import type { TerminalLeafId } from '../../../../shared/stable-pane-id'
@@ -205,6 +206,7 @@ export class PaneManager {
       paneId: pane.id,
       terminalGpuAcceleration: pane.terminalGpuAcceleration,
       gpuRenderingEnabled: pane.gpuRenderingEnabled,
+      terminalTransparencyEnabled: pane.terminalTransparencyEnabled,
       webglAttachmentDeferred: pane.webglAttachmentDeferred,
       webglDisabledAfterContextLoss: pane.webglDisabledAfterContextLoss,
       hasComplexScriptOutput: pane.hasComplexScriptOutput,
@@ -268,6 +270,10 @@ export class PaneManager {
 
   setPaneGpuRendering(paneId: number, enabled: boolean): void {
     setPaneGpuRenderingState(this.panes, paneId, enabled)
+  }
+
+  setPaneTransparency(paneId: number, enabled: boolean): void {
+    setPaneTerminalTransparency(this.panes, paneId, enabled)
   }
 
   setTerminalGpuAcceleration(mode: PaneManagerOptions['terminalGpuAcceleration']): void {

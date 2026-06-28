@@ -69,6 +69,7 @@ function createPane(id: number, container = createMockElement('pane')): ManagedP
     webLinksAddon: {} as never,
     terminalGpuAcceleration: 'on',
     gpuRenderingEnabled: true,
+    terminalTransparencyEnabled: false,
     webglAttachmentDeferred: false,
     webglDisabledAfterContextLoss: false,
     hasComplexScriptOutput: false,

@@ -22,6 +22,7 @@ function createPane(
     linkTooltip: {} as never,
     terminalGpuAcceleration: 'off',
     gpuRenderingEnabled: false,
+    terminalTransparencyEnabled: false,
     webglAttachmentDeferred: false,
     webglDisabledAfterContextLoss: false,
     hasComplexScriptOutput: false,

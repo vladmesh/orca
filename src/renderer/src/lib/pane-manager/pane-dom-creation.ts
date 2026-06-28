@@ -97,6 +97,9 @@ export function createPaneDOM(
     terminalTuiScrollSensitivity: options.terminalTuiScrollSensitivity,
     terminalGpuAcceleration: options.terminalGpuAcceleration ?? 'auto',
     gpuRenderingEnabled: ENABLE_WEBGL_RENDERER,
+    // Why: opacity is applied later via applyTerminalAppearance; panes start
+    // opaque so WebGL is eligible until transparency is actually enabled (#6491).
+    terminalTransparencyEnabled: false,
     webglAttachmentDeferred: false,
     webglDisabledAfterContextLoss: false,
     hasComplexScriptOutput: false,

@@ -83,6 +83,9 @@ export type PaneRenderingDiagnostics = {
   paneId: number
   terminalGpuAcceleration: GlobalSettings['terminalGpuAcceleration']
   gpuRenderingEnabled: boolean
+  // Why: background transparency forces the DOM renderer (#6491); surface it
+  // here so logs can explain why a pane has hasWebgl=false despite GPU being on.
+  terminalTransparencyEnabled: boolean
   webglAttachmentDeferred: boolean
   webglDisabledAfterContextLoss: boolean
   hasComplexScriptOutput: boolean
@@ -108,6 +111,10 @@ export type ManagedPaneInternal = {
   terminalTuiScrollSensitivity?: () => number | undefined
   terminalGpuAcceleration: GlobalSettings['terminalGpuAcceleration']
   gpuRenderingEnabled: boolean
+  // Why: when terminal background opacity < 1, xterm's WebGL renderer re-blends
+  // semi-transparent per-cell backgrounds over the retained framebuffer on
+  // partial redraws and flickers (#6491), so this flag forces DOM rendering.
+  terminalTransparencyEnabled: boolean
   webglAttachmentDeferred: boolean
   webglDisabledAfterContextLoss: boolean
   // Why: expose complex-output diagnostics without changing renderer choice;

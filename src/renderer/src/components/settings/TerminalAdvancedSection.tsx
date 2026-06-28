@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { GlobalSettings } from '../../../../shared/types'
 import {
   DESKTOP_TERMINAL_SCROLLBACK_ROWS_MAX,
@@ -44,12 +45,32 @@ export function TerminalAdvancedSection({
   isMac
 }: TerminalAdvancedSectionProps): React.JSX.Element {
   const scrollbackRows = normalizeDesktopTerminalScrollbackRows(settings.terminalScrollbackRows)
+  const [scrollbackRowsDraft, setScrollbackRowsDraft] = useState(String(scrollbackRows))
+  const [prevScrollbackRows, setPrevScrollbackRows] = useState(scrollbackRows)
+  if (scrollbackRows !== prevScrollbackRows) {
+    // Why: settings can update outside this pane, so the draft follows the
+    // persisted source once it changes instead of clobbering active edits.
+    setPrevScrollbackRows(scrollbackRows)
+    setScrollbackRowsDraft(String(scrollbackRows))
+  }
   const isPreset = SCROLLBACK_PRESETS_ROWS.includes(
     scrollbackRows as (typeof SCROLLBACK_PRESETS_ROWS)[number]
   )
   const scrollbackToggleValue =
     scrollbackMode === 'custom' ? 'custom' : isPreset ? `${scrollbackRows}` : 'custom'
   const powerShellImplementation = settings.terminalWindowsPowerShellImplementation ?? 'auto'
+  const commitScrollbackRowsDraft = (): void => {
+    const trimmed = scrollbackRowsDraft.trim()
+    const value = Number(trimmed)
+    if (trimmed === '' || !Number.isFinite(value)) {
+      setScrollbackRowsDraft(String(scrollbackRows))
+      return
+    }
+
+    const next = normalizeDesktopTerminalScrollbackRows(value)
+    updateSettings({ terminalScrollbackRows: next })
+    setScrollbackRowsDraft(String(next))
+  }
 
   return (
     <section key="advanced" className="space-y-3">
@@ -132,13 +153,12 @@ export function TerminalAdvancedSection({
                       min={DESKTOP_TERMINAL_SCROLLBACK_ROWS_MIN}
                       max={DESKTOP_TERMINAL_SCROLLBACK_ROWS_MAX}
                       step={100}
-                      value={scrollbackRows}
-                      onChange={(e) => {
-                        const value = Number(e.target.value)
-                        if (Number.isFinite(value)) {
-                          updateSettings({
-                            terminalScrollbackRows: normalizeDesktopTerminalScrollbackRows(value)
-                          })
+                      value={scrollbackRowsDraft}
+                      onChange={(e) => setScrollbackRowsDraft(e.target.value)}
+                      onBlur={commitScrollbackRowsDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          commitScrollbackRowsDraft()
                         }
                       }}
                       className="number-input-clean w-24 tabular-nums"

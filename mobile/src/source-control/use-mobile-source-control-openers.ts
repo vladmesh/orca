@@ -13,6 +13,7 @@ import {
   type MobileGitBranchChangeEntry
 } from './mobile-branch-compare'
 import { isMobileGitUnavailable, type MobileGitStatusEntry } from './mobile-git-status'
+import { buildMobileReviewFileRoute } from './mobile-review-route'
 import type {
   GitDiffTextResult,
   MobileBranchCompareState,
@@ -81,6 +82,19 @@ export function useMobileSourceControlOpeners(params: Params) {
       setOpeningPath(entry.path)
       try {
         setActionError(null)
+        if (origin !== 'session') {
+          triggerSelection()
+          router.push(
+            buildMobileReviewFileRoute({
+              hostId,
+              worktreeId,
+              worktreeName: name,
+              filePath: entry.path,
+              area: entry.area
+            }) as Parameters<typeof router.push>[0]
+          )
+          return
+        }
         let response = await client.sendRequest('files.openDiff', {
           worktree: `id:${worktreeId}`,
           relativePath: entry.path,
@@ -99,27 +113,16 @@ export function useMobileSourceControlOpeners(params: Params) {
           return
         }
         triggerSelection()
-        if (origin === 'session') {
-          onOpenedFileDiff?.(entry.path)
-          // Why: when launched from the session screen, opening a file dismisses
-          // this surface back to the session. In embedded mode there is nothing
-          // to pop (the panel docks beside the terminal), so close the dock
-          // instead of calling router.back().
-          if (embedded) {
-            onRequestClose?.()
-          } else {
-            router.back()
-          }
-          return
+        onOpenedFileDiff?.(entry.path)
+        // Why: when launched from the session screen, opening a file dismisses
+        // this surface back to the session. In embedded mode there is nothing
+        // to pop (the panel docks beside the terminal), so close the dock
+        // instead of calling router.back().
+        if (embedded) {
+          onRequestClose?.()
+        } else {
+          router.back()
         }
-        const sessionParams = new URLSearchParams()
-        if (name) {
-          sessionParams.set('name', name)
-        }
-        const query = sessionParams.toString()
-        router.replace(
-          `/h/${encodeURIComponent(hostId)}/session/${encodeURIComponent(worktreeId)}${query ? `?${query}` : ''}`
-        )
       } catch (err) {
         if (!mountedRef.current) {
           return
@@ -174,6 +177,23 @@ export function useMobileSourceControlOpeners(params: Params) {
 
       openingBranchPathRef.current = entry.path
       setOpeningBranchPath(entry.path)
+      if (origin !== 'session') {
+        triggerSelection()
+        router.push(
+          buildMobileReviewFileRoute({
+            hostId,
+            worktreeId,
+            worktreeName: name,
+            filePath: entry.path,
+            area: 'branch'
+          }) as Parameters<typeof router.push>[0]
+        )
+        openingBranchPathRef.current = null
+        if (mountedRef.current) {
+          setOpeningBranchPath(null)
+        }
+        return
+      }
       setBranchDiffPreview({ kind: 'loading', entry })
       try {
         const response = await client.sendRequest('git.branchDiff', {
@@ -226,7 +246,19 @@ export function useMobileSourceControlOpeners(params: Params) {
         }
       }
     },
-    [branchCompareState, busyActionRef, client, connState, mountedRef, setActionError, worktreeId]
+    [
+      branchCompareState,
+      busyActionRef,
+      client,
+      connState,
+      hostId,
+      mountedRef,
+      name,
+      origin,
+      router,
+      setActionError,
+      worktreeId
+    ]
   )
 
   return {

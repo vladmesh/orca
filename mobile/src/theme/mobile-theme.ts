@@ -13,6 +13,8 @@ export const colors = {
   textMuted: '#555555',
 
   accentBlue: '#3b82f6',
+  // On-fill text/icon color for the accentBlue primary action button.
+  onAccentBlue: '#ffffff',
 
   statusGreen: '#22c55e',
   statusAmber: '#f59e0b',

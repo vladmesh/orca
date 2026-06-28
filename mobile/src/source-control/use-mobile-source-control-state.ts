@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Keyboard, Platform } from 'react-native'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useHostClient, useForceReconnect } from '../transport/client-context'
 import { getWorktreeLabel } from '../session/worktree-label'
@@ -8,6 +7,8 @@ import { useMobileSourceControlLoaders } from './use-mobile-source-control-loade
 import { useMobileSourceControlOpeners } from './use-mobile-source-control-openers'
 import { buildMobileSourceControlPrimaryAction } from './mobile-source-control-primary-action'
 import { useMobileSourceControlRunners } from './use-mobile-source-control-runners'
+import { useMobileSourceControlCreatePrAction } from './use-mobile-source-control-create-pr-action'
+import { useMobileSourceControlKeyboardLift } from './use-mobile-source-control-keyboard-lift'
 import type { RuntimeGitLocalBranches } from '../../../src/shared/runtime-types'
 import {
   buildMobileBranchCompareSection,
@@ -59,7 +60,7 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
   const [discardTarget, setDiscardTarget] = useState<MobileGitStatusEntry | null>(null)
   const [showActionSheet, setShowActionSheet] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [keyboardLift, setKeyboardLift] = useState(0)
+  const keyboardLift = useMobileSourceControlKeyboardLift()
   const busyActionRef = useRef<string | null>(null)
   const worktreeLabel = getWorktreeLabel(name, worktreeId)
   const statusIdentityKey = `${hostId}\0${worktreeId}`
@@ -103,23 +104,6 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     setActionError
   })
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
-
-    const onShow = Keyboard.addListener(showEvent, (event) => {
-      // Why: iOS keyboard height already describes the obscured screen area.
-      // Subtracting the safe-area inset lets the commit bar tuck under the keyboard.
-      setKeyboardLift(Math.max(0, event.endCoordinates.height))
-    })
-    const onHide = Keyboard.addListener(hideEvent, () => setKeyboardLift(0))
-
-    return () => {
-      onShow.remove()
-      onHide.remove()
-    }
-  }, [])
-
   const status = screenState.kind === 'ready' ? screenState.status : null
   const entries = status?.entries ?? []
   const derivedEntries = useMemo<MobileGitStatusEntryView[]>(
@@ -161,7 +145,6 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     branchCompareState.kind === 'error' ||
     (branchCompareResult !== null && branchCompareResult.summary.status !== 'ready')
   const hasVisibleChanges = sections.length > 0 || shouldShowBranchCompareSection
-  const reviewableCount = entries.length + (branchCompareCanOpen ? branchEntries.length : 0)
   const stageablePaths = useMemo(() => getStageablePaths(entries), [entries])
   const unstageablePaths = useMemo(() => getUnstageablePaths(entries), [entries])
   const stagedCount = useMemo(() => countStagedEntries(entries), [entries])
@@ -218,6 +201,15 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     setCreatedPrUrl,
     setCreatedPrWarning,
     recordCommitFailure
+  })
+  const createPrAction = useMobileSourceControlCreatePrAction({
+    client,
+    connState,
+    worktreeId,
+    status,
+    hasUncommittedChanges: entries.length > 0,
+    busyAction,
+    createPr: runners.createPr
   })
   const primaryAction = useMemo(
     () =>
@@ -299,7 +291,6 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     branchEntries,
     shouldShowBranchCompareSection,
     hasVisibleChanges,
-    reviewableCount,
     stageablePaths,
     unstageablePaths,
     stagedCount,
@@ -309,6 +300,7 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     upstreamKnown,
     syncLabel,
     primaryAction,
+    createPrAction,
     // actions
     loadStatus,
     openFile,

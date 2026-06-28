@@ -541,7 +541,8 @@
         "ba6cb77082": "Failed to connect to project.",
         "chooseOrAddProjectBeforeWorkspace": "Choose or add a project before creating a workspace.",
         "folderWorkspaceCreateFailedTitle": "Folder workspace creation failed",
-        "folderWorkspaceCreateFailedMessage": "The folder workspace could not be created. Check the error details above, then try again."
+        "folderWorkspaceCreateFailedMessage": "The folder workspace could not be created. Check the error details above, then try again.",
+        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior."
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "Failed to upload dropped files.",
@@ -1130,7 +1131,9 @@
         "reconnectingSsh": "Reconnecting SSH...",
         "sshReconnectionFailed": "SSH reconnection failed",
         "notConnected": "Not connected",
-        "notePasteTooLarge": "Paste is too large for the note field."
+        "notePasteTooLarge": "Paste is too large for the note field.",
+        "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+        "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "Create worktree",
@@ -4343,6 +4346,31 @@
         },
         "WorktreeCardStatusSlot": {
           "branchIdentity": "Branch"
+        },
+        "NewExternalWorktreesInboxLine": {
+          "9f2d4c8b17": "Hide external worktrees permanently for {{value0}}",
+          "d9f7b2a14c": "Collapse new externally-created worktrees for {{value0}}",
+          "e2c4a8d91f": "Expand new externally-created worktrees for {{value0}}",
+          "7c4e9b2a81": "New externally-created worktrees",
+          "5e1b8d3f62": "Hide external worktrees permanently",
+          "4d7a1c9e53": "These worktrees were created outside of Orca.",
+          "8b3f2e1d74": "Import",
+          "1c9e7a4b28": "Keep hidden",
+          "6f2d8c1e95": "Import all",
+          "c3e8a1f4b2": "Don't show again"
+        },
+        "newExternalWorktreesInboxActions": {
+          "a11c2f6d89": "Could not keep external worktrees hidden. Try again.",
+          "b7e4d1a062": "Could not import external worktrees. Try again.",
+          "c94f0b3a15": "Could not hide external worktrees permanently. Try again."
+        },
+        "SuppressExternalWorktreeInboxDialog": {
+          "a4c2d8f1b0": "Hide external worktrees?",
+          "6e91b3c4d2": "External worktrees will not be shown in the sidebar or this list anymore for {{value0}}, including ones created later.",
+          "1f8a5d9e73": "You can turn this back on later from project settings.",
+          "8c0b2e7a41": "Open Non-Orca worktrees settings",
+          "5d1c9f0a82": "Cancel",
+          "3b7e4a1c96": "Hide external worktrees"
         }
       },
       "shared": {
@@ -4604,7 +4632,16 @@
             "tintOpacity": "Tint Strength",
             "tintOpacityDescription": "Controls how strongly the tint is mixed into the sidebar."
           },
-          "workspaceCardLayoutGuidance": "Use the workspace sidebar options menu > Card layout > Compact."
+          "workspaceCardLayoutGuidance": "Managed from the workspace sidebar.",
+          "interfaceDefaultFont": "Default font",
+          "terminalDefaultFont": "Default font",
+          "interfaceTitle": "Interface",
+          "terminalTitle": "Terminal",
+          "windowSidebarTitle": "Window & Sidebar",
+          "windowSidebarSummary": "Sidebar, status bar, and file explorer",
+          "statusBarCount": "{{value0}} indicators visible.",
+          "gitIgnoredGlossary": "Files matched by .gitignore.",
+          "statusBarDescription": "Choose which indicators appear in the status bar."
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -5656,7 +5693,9 @@
           "2b6356e744": "Saved",
           "81057d5f71": "Saving...",
           "da37d6f10e": "Copy",
-          "3149964b66": "Copied"
+          "3149964b66": "Copied",
+          "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+          "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
         },
         "RepositoryIconPicker": {
           "2b7d27b93c": "Use {{value0}} repo color",
@@ -6255,7 +6294,9 @@
           "4415beb958": "disabled",
           "4e7d41a9f0": "enabled",
           "e90afcc44f": "off",
-          "16c471ee03": "on"
+          "16c471ee03": "on",
+          "typographyAdvanced": "Typography",
+          "dimUnfocusedPanes": "Dim unfocused panes."
         },
         "TerminalFontSizeSetting": {
           "9b5252c85a": "px",
@@ -6785,7 +6826,7 @@
             },
             "workspaceCardLayout": {
               "title": "Workspace Card Layout",
-              "description": "Switch between compact and detailed workspace cards from the workspace sidebar options menu.",
+              "description": "Workspace cards can use compact or detailed layouts.",
               "compact": "compact",
               "compactDisplay": "compact display",
               "workspaceCards": "workspace cards",
@@ -8367,6 +8408,9 @@
           "wslUnavailable": "WSL is not available on this machine.",
           "distroRequired": "Choose a WSL distro before projects can inherit WSL.",
           "wslDescription": "Detect and launch agents in {{value0}} via WSL for projects that do not override their runtime."
+        },
+        "AppearanceAdvancedDisclosure": {
+          "advanced": "Advanced"
         }
       },
       "right": {

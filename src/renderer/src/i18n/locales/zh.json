@@ -541,7 +541,8 @@
         "ba6cb77082": "无法连接到项目。",
         "chooseOrAddProjectBeforeWorkspace": "创建工作区前，请选择或添加项目。",
         "folderWorkspaceCreateFailedTitle": "文件夹工作区创建失败",
-        "folderWorkspaceCreateFailedMessage": "无法创建文件夹工作区。请查看上方错误详情，然后重试。"
+        "folderWorkspaceCreateFailedMessage": "无法创建文件夹工作区。请查看上方错误详情，然后重试。",
+        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior."
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "无法上传删除的文件。",
@@ -1130,7 +1131,9 @@
         "notePasteTooLarge": "笔记字段的粘贴内容过大。",
         "reuseExistingBranch": "复用分支",
         "reuseExistingBranchHint": "检出已有分支，而不是从它创建新分支。",
-        "createMultiple": "创建更多"
+        "createMultiple": "创建更多",
+        "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+        "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "创建工作树",
@@ -4343,6 +4346,31 @@
         },
         "WorktreeCardStatusSlot": {
           "branchIdentity": "分支"
+        },
+        "NewExternalWorktreesInboxLine": {
+          "9f2d4c8b17": "永久隐藏 {{value0}} 的外部工作树",
+          "d9f7b2a14c": "折叠 {{value0}} 的外部创建的新工作树",
+          "e2c4a8d91f": "展开 {{value0}} 的外部创建的新工作树",
+          "7c4e9b2a81": "外部创建的新工作树",
+          "5e1b8d3f62": "永久隐藏外部工作树",
+          "4d7a1c9e53": "这些工作树是在 Orca 外部创建的。",
+          "8b3f2e1d74": "导入",
+          "1c9e7a4b28": "保持隐藏",
+          "6f2d8c1e95": "全部导入",
+          "c3e8a1f4b2": "不再显示"
+        },
+        "newExternalWorktreesInboxActions": {
+          "a11c2f6d89": "无法保持外部工作树隐藏。请重试。",
+          "b7e4d1a062": "无法导入外部工作树。请重试。",
+          "c94f0b3a15": "无法永久隐藏外部工作树。请重试。"
+        },
+        "SuppressExternalWorktreeInboxDialog": {
+          "a4c2d8f1b0": "隐藏外部工作树？",
+          "6e91b3c4d2": "对于 {{value0}}，外部工作树将不再显示在侧边栏或此列表中，包括之后创建的工作树。",
+          "1f8a5d9e73": "之后可以在项目设置中重新开启。",
+          "8c0b2e7a41": "打开 Non-Orca 工作树设置",
+          "5d1c9f0a82": "取消",
+          "3b7e4a1c96": "隐藏外部工作树"
         }
       },
       "shared": {
@@ -4586,10 +4614,19 @@
             "tintOpacity": "色调强度",
             "tintOpacityDescription": "控制色调混入边栏的强度。"
           },
-          "workspaceCardLayoutGuidance": "使用工作区侧边栏选项菜单 > 卡片布局 > 紧凑。",
+          "workspaceCardLayoutGuidance": "从工作区侧边栏管理。",
           "872af9556e": "系统托盘",
           "2edf606c46": "关闭时最小化到托盘",
-          "b707773a0d": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。"
+          "b707773a0d": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。",
+          "interfaceDefaultFont": "默认字体",
+          "terminalDefaultFont": "默认字体",
+          "interfaceTitle": "界面",
+          "terminalTitle": "终端",
+          "windowSidebarTitle": "窗口和侧边栏",
+          "windowSidebarSummary": "侧边栏、状态栏和文件浏览器",
+          "statusBarCount": "显示 {{value0}} 个指示器。",
+          "gitIgnoredGlossary": "与 .gitignore 匹配的文件。",
+          "statusBarDescription": "Choose which indicators appear in the status bar."
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -5604,7 +5641,9 @@
           "2b6356e744": "已保存",
           "81057d5f71": "保存中...",
           "da37d6f10e": "复制",
-          "3149964b66": "已复制"
+          "3149964b66": "已复制",
+          "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+          "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
         },
         "RepositoryIconPicker": {
           "2b7d27b93c": "使用 {{value0}} 仓库颜色",
@@ -6203,7 +6242,9 @@
           "4415beb958": "已禁用",
           "4e7d41a9f0": "已启用",
           "e90afcc44f": "关",
-          "16c471ee03": "开"
+          "16c471ee03": "开",
+          "typographyAdvanced": "排版",
+          "dimUnfocusedPanes": "调暗未聚焦的窗格。"
         },
         "TerminalFontSizeSetting": {
           "9b5252c85a": "像素",
@@ -6731,7 +6772,7 @@
             },
             "workspaceCardLayout": {
               "title": "工作区卡片布局",
-              "description": "从工作区侧边栏选项菜单在紧凑和详细工作区卡片之间切换。",
+              "description": "工作区卡片可以使用紧凑或详细布局。",
               "compact": "紧凑",
               "compactDisplay": "紧凑显示",
               "workspaceCards": "工作区卡片",
@@ -8367,6 +8408,9 @@
           "wslUnavailable": "WSL is not available on this machine.",
           "distroRequired": "Choose a WSL distro before projects can inherit WSL.",
           "wslDescription": "Detect and launch agents in {{value0}} via WSL for projects that do not override their runtime."
+        },
+        "AppearanceAdvancedDisclosure": {
+          "advanced": "高级"
         }
       },
       "right": {

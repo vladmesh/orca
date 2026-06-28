@@ -46,6 +46,7 @@ import {
 } from './layout-serialization'
 import { createShellReadyMarkerScanState, scanForShellReadyMarker } from './shell-ready-marker-scan'
 import { shouldUseShellReadyStartupDelivery } from '../../../../shared/codex-startup-delivery'
+import { resolveSetupAgentSequenceLaunchCommand } from '../../../../shared/setup-agent-sequencing'
 import { getSystemPrefersDark } from '@/lib/terminal-theme'
 import {
   mode2031SequenceFor,
@@ -141,6 +142,7 @@ const HIDDEN_OUTPUT_RESTORE_SCROLLBACK_ROWS = 5000
 const HIDDEN_OUTPUT_RESTORE_PENDING_CHARS = 512 * 1024
 const HIDDEN_OUTPUT_RESTORE_DEFERRED_RETRY_MS = 50
 const HIDDEN_OUTPUT_RESTORE_DEFERRED_RETRY_MAX = 3
+const HIDDEN_OUTPUT_RESTORE_FOREGROUND_TIMEOUT_MS = 750
 const TERMINAL_RENDERER_RISK_SCAN_TAIL_CHARS = 256
 const CURSOR_SHOW_SEQUENCE = '\x1b[?25h'
 const CURSOR_HIDE_SEQUENCE = '\x1b[?25l'
@@ -811,6 +813,7 @@ export function connectPanePty(
   let unregisterBacklogRecovery: (() => void) | null = null
   let unregisterDocumentVisibilityRecovery: (() => void) | null = null
   let cleanupHiddenOutputRestoreDeferredRetry = (): void => {}
+  let cleanupHiddenOutputRestoreForegroundDeadline = (): void => {}
   let unregisterE2ePtyDataInjection = (): void => {}
   let startupInjectTimer: ReturnType<typeof setTimeout> | null = null
   let sshShellReadyFallbackTimer: ReturnType<typeof setTimeout> | null = null
@@ -2107,6 +2110,37 @@ export function connectPanePty(
   if (geometryReportObserver && pane.container instanceof Element) {
     geometryReportObserver.observe(pane.container)
   }
+
+  // Why: the deferred-rAF fit can spawn the PTY at a stale width when the pane's
+  // real (e.g. split/narrower) layout has not settled by the first frame — the
+  // PTY is born at the wide window width while xterm later reflows to the pane
+  // width. The corrective onResize is then dropped (cols already matched at fit
+  // time, or isRendererPtyResizeAuthoritative() was false mid-mount), pinning
+  // process.stdout.columns forever and garbling TUIs. Re-fit once layout has
+  // settled and force the PTY to xterm's dimensions; the initial spawn-time sync
+  // is authoritative by definition, so it bypasses the visibility gate (but not
+  // the mobile-fit override, which legitimately parks the PTY at phone dims).
+  const reconcilePtySizeAfterSpawn = (
+    ptyId: string,
+    spawnCols: number,
+    spawnRows: number
+  ): void => {
+    requestAnimationFrame(() => {
+      if (disposed || transport.getPtyId() !== ptyId) {
+        return
+      }
+      if (getFitOverrideForPty(ptyId) || isPtyLocked(ptyId)) {
+        return
+      }
+      safeFit(pane)
+      const cols = pane.terminal.cols
+      const rows = pane.terminal.rows
+      if (cols > 0 && rows > 0 && (cols !== spawnCols || rows !== spawnRows)) {
+        transport.resize(cols, rows)
+      }
+    })
+  }
+
   // Defer PTY spawn/attach to next frame so FitAddon has time to calculate
   // the correct terminal dimensions from the laid-out container.
   connectFrame = requestAnimationFrame(() => {
@@ -2196,10 +2230,14 @@ export function connectPanePty(
           ? { command: paneStartup.command }
           : null
         : null
+    const startupShellReadyCommandHint = resolveSetupAgentSequenceLaunchCommand(
+      paneStartup?.env ?? {},
+      paneStartup?.command
+    )
     const shouldWaitForSshShellReady =
       Boolean(connectionId) &&
       shouldUseShellReadyStartupDelivery({
-        command: paneStartup?.command,
+        command: startupShellReadyCommandHint,
         startupCommandDelivery: paneStartup?.startupCommandDelivery
       }) &&
       !shouldDeliverStartupViaTerminalPaste
@@ -2482,6 +2520,9 @@ export function connectPanePty(
             // viable delivery target and must not wait for a future pane.
             clearRegisteredStartupLaunchConfig()
           }
+          if (resolvedPtyId) {
+            reconcilePtySizeAfterSpawn(resolvedPtyId, cols, rows)
+          }
           const gen = await preSignalPromise
           if (typeof gen === 'number' && resolvedPtyId) {
             if (!isRemoteRuntimePtyId(resolvedPtyId)) {
@@ -2619,6 +2660,7 @@ export function connectPanePty(
     let hiddenOutputRestoreRetryDeferred = false
     let hiddenOutputRestoreScheduled = false
     let hiddenOutputRestoreDeferredRetryTimer: ReturnType<typeof setTimeout> | null = null
+    let hiddenOutputRestoreForegroundDeadlineTimer: ReturnType<typeof setTimeout> | null = null
     let hiddenOutputRestoreDeferredRetryAttempts = 0
     // Why: hidden recovery state belongs to one PTY stream. Reattach/restart
     // can reuse the pane object for a different session before visibility.
@@ -3031,6 +3073,7 @@ export function connectPanePty(
         hiddenOutputRestorePendingChunks = []
         hiddenOutputRestorePendingChars = 0
         hiddenOutputRestorePendingOverflow = true
+        armHiddenOutputRestoreForegroundDeadline()
         return
       }
       const pending: PendingHiddenOutputRestoreChunk = { data }
@@ -3042,6 +3085,7 @@ export function connectPanePty(
       }
       hiddenOutputRestorePendingChunks.push(pending)
       hiddenOutputRestorePendingChars += data.length
+      armHiddenOutputRestoreForegroundDeadline()
     }
 
     function getChunkDataAfterSnapshot(
@@ -3110,32 +3154,8 @@ export function connectPanePty(
       hiddenOutputRestoreScheduled = false
       cancelScheduledHiddenOutputRestore(pane.terminal)
       clearHiddenOutputRestoreDeferredRetryTimer()
+      clearHiddenOutputRestoreForegroundDeadlineTimer()
       hiddenOutputRestoreDeferredRetryAttempts = 0
-    }
-
-    function drainPendingLiveChunksWithoutSnapshot(): void {
-      if (hiddenOutputRestorePendingOverflow) {
-        hiddenOutputRestorePendingChunks = []
-        hiddenOutputRestorePendingChars = 0
-        hiddenOutputRestorePendingOverflow = false
-        return
-      }
-      // Why: once snapshot retries are exhausted, these bounded chunks are the
-      // only known visible-era PTY bytes; replay them without overlap trimming.
-      while (hiddenOutputRestorePendingChunks.length > 0) {
-        const chunks = hiddenOutputRestorePendingChunks
-        hiddenOutputRestorePendingChunks = []
-        hiddenOutputRestorePendingChars = 0
-        for (const chunk of chunks) {
-          writePtyOutputToXterm(chunk.data, true)
-        }
-        if (hiddenOutputRestorePendingOverflow) {
-          hiddenOutputRestorePendingChunks = []
-          hiddenOutputRestorePendingChars = 0
-          hiddenOutputRestorePendingOverflow = false
-          return
-        }
-      }
     }
 
     function clearHiddenOutputRestoreDeferredRetryTimer(): void {
@@ -3147,6 +3167,81 @@ export function connectPanePty(
     }
     cleanupHiddenOutputRestoreDeferredRetry = clearHiddenOutputRestoreDeferredRetryTimer
 
+    function clearHiddenOutputRestoreForegroundDeadlineTimer(): void {
+      if (hiddenOutputRestoreForegroundDeadlineTimer === null) {
+        return
+      }
+      clearTimeout(hiddenOutputRestoreForegroundDeadlineTimer)
+      hiddenOutputRestoreForegroundDeadlineTimer = null
+    }
+    cleanupHiddenOutputRestoreForegroundDeadline = clearHiddenOutputRestoreForegroundDeadlineTimer
+
+    function armHiddenOutputRestoreForegroundDeadline(): void {
+      if (
+        disposed ||
+        hiddenOutputRestoreForegroundDeadlineTimer !== null ||
+        !shouldWritePtyOutputForeground(deps.isVisibleRef.current) ||
+        (hiddenOutputRestorePendingChunks.length === 0 && !hiddenOutputRestorePendingOverflow)
+      ) {
+        return
+      }
+      const ptyId = hiddenOutputRestorePtyId
+      if (ptyId === null || transport.getPtyId() !== ptyId) {
+        return
+      }
+      const deadlineGeneration = hiddenOutputRestoreGeneration
+      // Why: only foreground-visible output blocked behind recovery gets a
+      // deadline; hidden-time restore work can continue without user impact.
+      hiddenOutputRestoreForegroundDeadlineTimer = setTimeout(() => {
+        hiddenOutputRestoreForegroundDeadlineTimer = null
+        if (
+          disposed ||
+          hiddenOutputRestoreGeneration !== deadlineGeneration ||
+          hiddenOutputRestorePtyId !== ptyId ||
+          !shouldWritePtyOutputForeground(deps.isVisibleRef.current)
+        ) {
+          return
+        }
+        abandonHiddenOutputRestoreAndDrainPendingForeground(ptyId)
+      }, HIDDEN_OUTPUT_RESTORE_FOREGROUND_TIMEOUT_MS)
+    }
+
+    function abandonHiddenOutputRestoreAndDrainPendingForeground(expectedPtyId: string): void {
+      if (transport.getPtyId() !== expectedPtyId || hiddenOutputRestorePtyId !== expectedPtyId) {
+        resetHiddenOutputRestoreIfPtyChanged()
+        return
+      }
+      const pendingChunks = hiddenOutputRestorePendingOverflow
+        ? []
+        : hiddenOutputRestorePendingChunks.slice()
+      const hadPendingOverflow = hiddenOutputRestorePendingOverflow
+      hiddenOutputRestoreGeneration += 1
+      hiddenOutputRestoreInFlight = null
+      hiddenOutputRestoreNeeded = false
+      hiddenOutputRestorePtyId = null
+      hiddenOutputRestorePendingChunks = []
+      hiddenOutputRestorePendingChars = 0
+      hiddenOutputRestorePendingOverflow = false
+      hiddenOutputRestoreFreshSnapshotNeeded = false
+      hiddenOutputRestoreRetryDeferred = false
+      hiddenOutputRestoreScheduled = false
+      hiddenStartupRendererQueryPending = ''
+      hiddenRendererStateDirty = false
+      cancelScheduledHiddenOutputRestore(pane.terminal)
+      clearHiddenOutputRestoreDeferredRetryTimer()
+      clearHiddenOutputRestoreForegroundDeadlineTimer()
+      hiddenOutputRestoreDeferredRetryAttempts = 0
+
+      writeRestoreUnavailableWarning()
+      if (hadPendingOverflow) {
+        return
+      }
+      const pendingData = pendingChunks.map((chunk) => chunk.data).join('')
+      if (pendingData) {
+        writePtyOutputToXterm(pendingData, true)
+      }
+    }
+
     function scheduleHiddenOutputRestoreDeferredRetry(): void {
       if (
         disposed ||
@@ -3156,9 +3251,13 @@ export function connectPanePty(
         return
       }
       if (hiddenOutputRestoreDeferredRetryAttempts >= HIDDEN_OUTPUT_RESTORE_DEFERRED_RETRY_MAX) {
-        writeRestoreUnavailableWarning()
-        drainPendingLiveChunksWithoutSnapshot()
-        clearHiddenOutputRestoreState()
+        const ptyId = hiddenOutputRestorePtyId
+        if (ptyId !== null) {
+          abandonHiddenOutputRestoreAndDrainPendingForeground(ptyId)
+        } else {
+          clearHiddenOutputRestoreState()
+          writeRestoreUnavailableWarning()
+        }
         return
       }
       hiddenOutputRestoreDeferredRetryAttempts += 1
@@ -3284,6 +3383,7 @@ export function connectPanePty(
       }
       hiddenOutputRestorePtyId = ptyId
       if (hiddenOutputRestoreInFlight) {
+        armHiddenOutputRestoreForegroundDeadline()
         return true
       }
       if (!opts?.bypassScheduler) {
@@ -3357,14 +3457,15 @@ export function connectPanePty(
           if (disposed) {
             return
           }
-          if (
-            hiddenOutputRestoreGeneration !== restoreGeneration ||
-            transport.getPtyId() !== currentPtyId ||
-            hiddenOutputRestorePtyId !== currentPtyId
-          ) {
+          const restoreGenerationChanged = hiddenOutputRestoreGeneration !== restoreGeneration
+          const restorePtyChanged =
+            transport.getPtyId() !== currentPtyId || hiddenOutputRestorePtyId !== currentPtyId
+          if (restoreGenerationChanged || restorePtyChanged) {
             // Why: the snapshot belongs to the requested PTY; after reattach,
             // replaying it would show stale/cleared output in the new terminal.
-            if (hiddenOutputRestorePtyId === currentPtyId) {
+            // A stale generation may be an abandoned timeout while a newer
+            // restore for the same PTY owns the current hidden-recovery state.
+            if (restorePtyChanged && hiddenOutputRestorePtyId === currentPtyId) {
               clearHiddenOutputRestoreState()
             }
             return
@@ -3383,6 +3484,7 @@ export function connectPanePty(
           if (drainPendingLiveChunksAfterSnapshot(snapshot.seq) && !needsFreshSnapshot) {
             hiddenOutputRestoreNeeded = false
             hiddenOutputRestorePtyId = null
+            clearHiddenOutputRestoreForegroundDeadlineTimer()
             return
           }
           if (!shouldWritePtyOutputForeground(deps.isVisibleRef.current)) {
@@ -3394,10 +3496,16 @@ export function connectPanePty(
           }
           hiddenOutputRestoreNeeded = true
         }
-      })().finally(() => {
-        hiddenOutputRestoreInFlight = null
+      })()
+      const hiddenOutputRestoreTask = hiddenOutputRestoreInFlight
+      let trackedHiddenOutputRestore: Promise<void>
+      trackedHiddenOutputRestore = hiddenOutputRestoreTask.finally(() => {
+        if (hiddenOutputRestoreInFlight === trackedHiddenOutputRestore) {
+          hiddenOutputRestoreInFlight = null
+        }
         if (hiddenOutputRestorePendingChunks.length > 0 || hiddenOutputRestorePendingOverflow) {
           hiddenOutputRestoreNeeded = true
+          armHiddenOutputRestoreForegroundDeadline()
         }
         if (
           !hiddenOutputRestoreRetryDeferred &&
@@ -3407,6 +3515,7 @@ export function connectPanePty(
           requestHiddenOutputRestoreIfNeeded()
         }
       })
+      hiddenOutputRestoreInFlight = trackedHiddenOutputRestore
       return true
     }
 
@@ -4301,6 +4410,7 @@ export function connectPanePty(
       clearTerminalBellNotificationTimer()
       clearReattachIdleAgentCursorResetTimer()
       cleanupHiddenOutputRestoreDeferredRetry()
+      cleanupHiddenOutputRestoreForegroundDeadline()
       unregisterBacklogRecovery?.()
       unregisterBacklogRecovery = null
       unregisterDocumentVisibilityRecovery?.()

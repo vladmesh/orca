@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       bump_patch_version:
-        description: 'Bump the iOS marketing version patch number before release'
+        description: 'Force a marketing version patch bump. Usually unnecessary: a released version auto-bumps. Use this to start a new version while the current one is still open (beta iteration).'
         required: false
         default: false
         type: boolean

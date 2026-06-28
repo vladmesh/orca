@@ -6,10 +6,11 @@ import { randomBytes, randomUUID } from 'crypto'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { hardenExistingSecureFile, writeSecureJsonFile } from '../../shared/secure-file'
+import type { DeviceScope } from '../../shared/runtime-types'
 
 const DEVICE_REGISTRY_FILENAME = 'orca-devices.json'
 
-export type DeviceScope = 'mobile' | 'runtime'
+export type { DeviceScope }
 
 export type DeviceEntry = {
   deviceId: string

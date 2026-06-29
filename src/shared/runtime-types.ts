@@ -432,6 +432,14 @@ export type RuntimeTerminalRename = {
   title: string | null
 }
 
+export type RuntimeAgentLabel = {
+  /** Echoed so a mis-target (wrong active terminal fallback) is visible. */
+  terminalHandle: string
+  paneKey: string
+  /** Normalized label, or null when cleared. */
+  label: string | null
+}
+
 export type RuntimeTerminalSend = {
   handle: string
   accepted: boolean
@@ -518,6 +526,10 @@ export type RuntimeWorktreeAgentRow = {
   taskTitle: string | null
   /** Explicit UI label for orchestration task rows, or null outside dispatch. */
   displayName: string | null
+  /** Explicit per-agent label set via `orca agent label set`, or null. Distinct
+   *  from displayName/taskTitle: consumers branching on those for orchestration
+   *  metadata must not get false positives for manually-labeled agents. */
+  customAgentLabel: string | null
   lastAssistantMessage: string | null
   toolName: string | null
   toolInput: string | null

@@ -200,16 +200,17 @@ function NativeChatResolvedView({
     }
   }, [])
 
+  // Real Cmd/Ctrl+V is claimed by the Edit > Paste menu accelerator, which
+  // sends this app-menu paste event instead of producing a DOM `paste` event on
+  // the composer. Route it into the composer whenever focus is anywhere inside
+  // this chat pane — including the composer textarea itself (the previous
+  // non-interactive-target guard skipped exactly the focused-textarea case,
+  // which is why Cmd+V appeared to do nothing).
   useEffect(() => {
     const onAppMenuPaste = (event: Event): void => {
       const root = rootRef.current
       const activeElement = document.activeElement
-      if (
-        !root ||
-        !(activeElement instanceof Element) ||
-        !root.contains(activeElement) ||
-        !shouldFocusNativeChatPaneFromPointerTarget(activeElement)
-      ) {
+      if (!root || !(activeElement instanceof Element) || !root.contains(activeElement)) {
         return
       }
       event.preventDefault()

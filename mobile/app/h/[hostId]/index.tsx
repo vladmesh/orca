@@ -44,6 +44,7 @@ import {
 import type { RpcSuccess } from '../../../src/transport/types'
 import { StatusDot } from '../../../src/components/StatusDot'
 import { NewWorktreeModalController } from '../../../src/components/NewWorktreeModalController'
+import { NewWorkspaceFab, FAB_SIZE } from '../../../src/components/NewWorkspaceFab'
 import { MobileRepoIcon } from '../../../src/components/MobileRepoIcon'
 import { WorktreeListRow } from '../../../src/components/WorktreeListRow'
 import { useNow } from '../../../src/hooks/use-now'
@@ -86,10 +87,6 @@ import { useWorkspaceSections } from '../../../src/worktree/use-workspace-sectio
 import { getMobileWorkspaceLineageGroupKey } from '../../../src/worktree/mobile-workspace-lineage'
 import { areWorktreeListsEqual } from '../../../src/worktree/worktree-list-snapshot'
 import { repoColor } from '../../../src/worktree/repo-color'
-import {
-  MobileCreateWorkspaceFab,
-  MOBILE_CREATE_WORKSPACE_FAB_LIST_CLEARANCE
-} from '../../../src/worktree/MobileCreateWorkspaceFab'
 import {
   WORKSPACE_GROUP_OPTIONS as GROUP_OPTIONS,
   WORKSPACE_SORT_OPTIONS as SORT_OPTIONS
@@ -1177,12 +1174,7 @@ export function HostScreen({
           // layouts, extra clearance so the last row can scroll above the FAB.
           contentContainerStyle={[
             styles.list,
-            {
-              paddingBottom:
-                spacing.lg +
-                insets.bottom +
-                (!embedded ? MOBILE_CREATE_WORKSPACE_FAB_LIST_CLEARANCE : 0)
-            },
+            { paddingBottom: (embedded ? spacing.lg : FAB_SIZE + spacing.xl) + insets.bottom },
             isWideLayout &&
               !embedded && { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }
           ]}
@@ -1240,13 +1232,9 @@ export function HostScreen({
         />
       )}
 
-      {!embedded ? (
-        <MobileCreateWorkspaceFab
-          bottomOffset={insets.bottom + spacing.lg}
-          connected={connState === 'connected'}
-          onPress={openNewWorktreeModal}
-        />
-      ) : null}
+      {!embedded && (
+        <NewWorkspaceFab onPress={openNewWorktreeModal} disabled={connState !== 'connected'} />
+      )}
 
       <PickerModal
         visible={showSortPicker}

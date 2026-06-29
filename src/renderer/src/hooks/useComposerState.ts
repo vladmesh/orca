@@ -416,6 +416,42 @@ export function resolveInitialWorkspaceRunSeed({
   }
 }
 
+export function isExplicitWorkspaceNameInput({
+  name,
+  lastAutoName
+}: {
+  name: string
+  lastAutoName: string
+}): boolean {
+  // Why: a user-authored name must win over linked-item and first-message AI naming.
+  return Boolean(name.trim()) && name !== lastAutoName && !isWorkItemLookupText(name)
+}
+
+function getLinkedWorkItemSeedName(item: LinkedWorkItemSummary | null | undefined): string {
+  if (!item) {
+    return ''
+  }
+  return getLinkedWorkItemWorkspaceName(item)?.seedName ?? getLinkedWorkItemSuggestedName(item)
+}
+
+export function getInitialAutoManagedWorkspaceName({
+  draftName,
+  draftLinkedWorkItem,
+  initialName,
+  initialLinkedWorkItem
+}: {
+  draftName?: string | null
+  draftLinkedWorkItem?: LinkedWorkItemSummary | null
+  initialName: string
+  initialLinkedWorkItem?: LinkedWorkItemSummary | null
+}): string {
+  // Why: command-palette prefilled names are user input unless they exactly
+  // match the linked item seed Orca generated for a source selection.
+  const candidateName = draftName ?? initialName
+  const seedName = getLinkedWorkItemSeedName(draftLinkedWorkItem ?? initialLinkedWorkItem)
+  return candidateName && seedName && candidateName === seedName ? candidateName : ''
+}
+
 // Why: both the full-page TaskPage composer and the Cmd+J modal can be
 // mounted simultaneously. Without instance scoping, a single native file
 // drop fires every subscriber and duplicates attachments/prompt edits across
@@ -972,7 +1008,12 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const [linkDirectLoading, setLinkDirectLoading] = useState(false)
 
   const lastAutoNameRef = useRef<string>(
-    persistDraft ? (newWorkspaceDraft?.name ?? initialName) : initialName
+    getInitialAutoManagedWorkspaceName({
+      draftName: persistDraft ? newWorkspaceDraft?.name : null,
+      draftLinkedWorkItem: persistDraft ? newWorkspaceDraft?.linkedWorkItem : null,
+      initialName,
+      initialLinkedWorkItem
+    })
   )
   const nameRef = useRef<string>(name)
   nameRef.current = name
@@ -2702,12 +2743,35 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
               },
               { timeoutMs: 30_000 }
             )
-      void resolveMrBase.then((result) => {
-        if ('error' in result) {
-          return
-        }
-        handleBaseBranchMrSelect(result.baseBranch, item, result.pushTarget, result.compareBaseRef)
-      })
+      void resolveMrBase
+        .then((result) => {
+          if ('error' in result) {
+            // Why: without surfacing the failure the worktree silently falls
+            // back to the repo default branch (origin/master), so clear stale
+            // base state and tell the user — mirrors the GitHub PR path.
+            setBaseBranch(undefined)
+            setCompareBaseRef(undefined)
+            setPushTarget(undefined)
+            toast.error(result.error)
+            return
+          }
+          handleBaseBranchMrSelect(
+            result.baseBranch,
+            item,
+            result.pushTarget,
+            result.compareBaseRef
+          )
+        })
+        .catch((error: unknown) => {
+          setBaseBranch(undefined)
+          setCompareBaseRef(undefined)
+          setPushTarget(undefined)
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : translate('auto.hooks.useComposerState.5f3d2c8a1b', 'Failed to resolve MR base.')
+          )
+        })
     },
     [
       applyLinkedGitLabWorkItem,
@@ -3067,8 +3131,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       const submitTitleName = submitLinkedWorkItem
         ? getLinkedWorkItemWorkspaceName(submitLinkedWorkItem)
         : null
-      const nameIsAutoManaged =
-        !name.trim() || name === lastAutoNameRef.current || isWorkItemLookupText(name)
+      const nameIsAutoManaged = !isExplicitWorkspaceNameInput({
+        name,
+        lastAutoName: lastAutoNameRef.current
+      })
       const workspaceName =
         smartGitHubResolution.kind === 'none'
           ? nameIsAutoManaged && submitTitleName
@@ -3472,8 +3538,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         const submitTitleName = submitLinkedWorkItem
           ? getLinkedWorkItemWorkspaceName(submitLinkedWorkItem)
           : null
-        const nameIsAutoManaged =
-          !name.trim() || name === lastAutoNameRef.current || isWorkItemLookupText(name)
+        const nameIsAutoManaged = !isExplicitWorkspaceNameInput({
+          name,
+          lastAutoName: lastAutoNameRef.current
+        })
         const workspaceName =
           smartGitHubResolution.kind === 'none'
             ? nameIsAutoManaged && submitTitleName

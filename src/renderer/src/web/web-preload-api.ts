@@ -488,7 +488,8 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     platform: {
       get: () => ({
         platform: getBrowserPlatform(),
-        osRelease: ''
+        osRelease: '',
+        displayServer: null
       })
     },
     e2e: {
@@ -1483,6 +1484,14 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
         includeIgnored
       })
     },
+    submoduleStatus: async ({ worktreePath, submodulePath, area }) => {
+      const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
+      return callRuntimeResult('git.submoduleStatus', {
+        worktree: toRuntimeWorktreeSelector(worktree.id),
+        submodulePath,
+        area
+      })
+    },
     checkIgnored: async ({ worktreePath, paths }) => {
       const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
       return callRuntimeResult('git.checkIgnored', {
@@ -2469,6 +2478,7 @@ function createAccountsApi(): never {
   return {
     list: () => Promise.resolve(empty),
     add: () => Promise.resolve(empty),
+    cancelPendingLogin: () => Promise.resolve(false),
     reauthenticate: () => Promise.resolve(empty),
     remove: () => Promise.resolve(empty),
     select: () => Promise.resolve(empty)

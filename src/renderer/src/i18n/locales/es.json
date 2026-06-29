@@ -396,6 +396,13 @@
               "173553f73a": "VS Code"
             }
           }
+        },
+        "mobile": {
+          "emulator": {
+            "tab": {
+              "bf4f2a8a72": "Could not start the emulator. Check iOS or Android emulator setup and try another device."
+            }
+          }
         }
       },
       "orchestration": {
@@ -543,7 +550,8 @@
         "chooseOrAddProjectBeforeWorkspace": "Elige o agrega un proyecto antes de crear un espacio de trabajo.",
         "folderWorkspaceCreateFailedTitle": "No se pudo crear el espacio de trabajo de carpeta",
         "folderWorkspaceCreateFailedMessage": "No se pudo crear el espacio de trabajo de carpeta. Revisa los detalles del error de arriba e inténtalo de nuevo.",
-        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior."
+        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior.",
+        "5f3d2c8a1b": "Failed to resolve MR base."
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "No se pudieron cargar los archivos eliminados.",
@@ -2417,6 +2425,7 @@
             "copyTerminalId": "Copiar ID de terminal",
             "2cf85a6a55": "Copiar ID del panel",
             "39809d152f": "Establecer título…",
+            "clearPaneTitle": "Borrar título del panel",
             "06c2b0f043": "Igualar tamaños de paneles",
             "98bccf4fa2": "Terminal dividido hacia abajo",
             "20e565d865": "Terminal dividido a la derecha",
@@ -2551,7 +2560,9 @@
             "couldNotReadPayload": "No se pudo leer la carga arrastrada de la sesión.",
             "localWorkspacesOnly": "Reanudar desde el historial solo está disponible en espacios de trabajo locales.",
             "openLocalWorkspace": "Abre un espacio de trabajo local antes de reanudar una sesión.",
-            "sessionQueued": "Sesión en cola"
+            "sessionQueued": "Sesión en cola",
+            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
+            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session."
           },
           "TabGroupDropOverlay": {
             "paneColumnLabel": "Nueva división"
@@ -5212,7 +5223,11 @@
           "sourceControlGroupOrderDescription": "Elige si Cambios, Cambios preparados o Archivos sin seguimiento aparecen primero en Control de código fuente.",
           "changesFirst": "Cambios primero",
           "stagedFirst": "Cambios preparados primero",
-          "untrackedFirst": "Archivos sin seguimiento primero"
+          "untrackedFirst": "Archivos sin seguimiento primero",
+          "compareAgainstUpstreamTitle": "Base de comparación predeterminada",
+          "compareAgainstUpstreamDescription": "Elige qué base usa Control de código fuente de forma predeterminada para las comparaciones de cambios confirmados. El upstream de la rama sigue automáticamente la rama actual y recurre a la rama predeterminada del repositorio cuando no hay upstream. Aun así, puedes cambiar la base de comparación por worktree desde el panel Git de ese worktree. Los objetivos de Pull Request y rebase no cambian.",
+          "compareBaseRepositoryDefault": "Predeterminada del repositorio",
+          "compareBaseBranchUpstream": "Upstream de la rama"
         },
         "HiddenExperimentalGroup": {
           "d0f914a528": "Alternar marcador de posición",
@@ -5409,7 +5424,12 @@
           "a4f1c82d90": "Desactivado",
           "b5e2d93e01": "De cheques...",
           "c6f3ea4f12": "Listo",
-          "d704fb5023": "Necesita configuración"
+          "d704fb5023": "Necesita configuración",
+          "06b06429c6": "Checking Android SDK and iOS Simulator support.",
+          "6d1483d4a0": "1 emulator device detected.",
+          "0a452d4d3b": "{{value0}} emulator devices detected.",
+          "f62a1bb759": "Orca will auto-select an emulator device after devices are detected.",
+          "b2fd62ea75": "Default device for new emulator tabs and agent attach commands. Auto-select prefers an already running device."
         },
         "MobileNetworkInterfaceSection": {
           "63d5e4ae1e": "Regenera el código QR y escanéalo desde la aplicación móvil de Orca.",
@@ -7347,7 +7367,19 @@
             "stagedFirst": "cambios preparados primero",
             "untrackedFirst": "sin seguimiento primero",
             "sourceControl": "control de código fuente",
-            "gitChanges": "cambios de git"
+            "gitChanges": "cambios de git",
+            "compareAgainstUpstreamTitle": "Base de comparación predeterminada",
+            "compareAgainstUpstreamDescription": "Elige qué base usa Control de código fuente de forma predeterminada para las comparaciones de cambios confirmados. El upstream de la rama sigue automáticamente la rama actual y recurre a la rama predeterminada del repositorio cuando no hay upstream. Aun así, puedes cambiar la base de comparación por worktree desde el panel Git de ese worktree. Los objetivos de Pull Request y rebase no cambian.",
+            "compareBase": "base de comparación",
+            "currentBranch": "rama actual",
+            "upstream": "upstream",
+            "localChanges": "cambios locales",
+            "originMaster": "origin/master",
+            "committedChanges": "cambios confirmados",
+            "defaultCompareBase": "base de comparación predeterminada",
+            "defaultBranch": "rama predeterminada",
+            "repositoryDefault": "predeterminada del repositorio",
+            "branchUpstream": "upstream de la rama"
           }
         },
         "input": {
@@ -8467,6 +8499,21 @@
           "distroRequired": "Choose a WSL distro before projects can inherit WSL.",
           "wslDescription": "Detect and launch agents in {{value0}} via WSL for projects that do not override their runtime."
         },
+        "MobileEmulatorSdkStatus": {
+          "536026130e": "Emulator SDKs",
+          "dde0ec1cd8": "Toolchains Orca uses to run emulators. Android works on any OS via the Android SDK; iOS Simulators need Xcode on macOS.",
+          "027cbf668a": "Android SDK",
+          "f6d080d128": "Using configured path",
+          "7fe4bd5907": "Detected at",
+          "2784f0b22d": "Not found. Install Android Studio, then create a Virtual Device.",
+          "b94ff260e6": "Download Android Studio",
+          "18925b082d": "Locate SDK folder",
+          "8c52684db8": "Clear",
+          "76eb88b88e": "iOS Simulator (Xcode)",
+          "c6f3ea4f12": "Ready",
+          "e4f14b50d7": "Install Xcode and add an iOS Simulator runtime.",
+          "63fe73a1ea": "Could not update Android SDK folder."
+        },
         "AppearanceAdvancedDisclosure": {
           "advanced": "Avanzado"
         }
@@ -9330,7 +9377,10 @@
             "agents": "Agentes",
             "sessionsShownCompact": "{{value0}} mostradas",
             "originalPaneUnavailable": "Original pane is no longer available.",
-            "worktreeUnavailable": "Worktree is no longer available."
+            "worktreeUnavailable": "Worktree is no longer available.",
+            "runtimeBrowseLocalHistory": "Runtime-hosted workspaces can browse local history. Resume actions are available in local and SSH workspaces.",
+            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
+            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session."
           },
           "AiVaultPanelControls": {
             "scanningSessions": "Scanning sessions",
@@ -9967,6 +10017,20 @@
             "cefd048225": "Atrás",
             "c5ad56786d": "hilandero"
           }
+        },
+        "CustomNetworkAddressDialog": {
+          "title": "Dirección de red personalizada",
+          "description": "Anuncia una dirección que tu teléfono pueda alcanzar cuando no esté en la misma red Wi-Fi: por ejemplo, un nombre de host de Tailscale o una IP estática.",
+          "label": "Dirección",
+          "placeholder": "my-mac.ts.net o 192.168.1.50",
+          "hint": "Introduce una dirección IP o un nombre de host de Tailscale (termina en .ts.net).",
+          "cancel": "Cancelar",
+          "use": "Usar dirección"
+        },
+        "NetworkInterfacePicker": {
+          "trigger-label": "Dirección de red para anunciar",
+          "custom-option": "{{address}} (personalizada)",
+          "add-custom": "Añadir dirección personalizada…"
         }
       },
       "gitlab": {
@@ -10982,7 +11046,14 @@
           "32ae8d7d57": "Partido anterior",
           "158c645829": "Buscar en el editor de markdowns enriquecido",
           "98b89276f3": "Buscar en editor enriquecido",
-          "a86958d508": "Sin resultados"
+          "a86958d508": "Sin resultados",
+          "e8c147435f": "Ocultar reemplazo",
+          "9cdc38be33": "Mostrar reemplazo",
+          "482b637099": "Distingue mayúsculas y minúsculas",
+          "68d090241d": "Coincidir con toda la palabra",
+          "fd97c7e585": "Reemplazar",
+          "44682b4159": "Reemplazar en el editor de markdown enriquecido",
+          "c2884f5e95": "Reemplazar todo"
         },
         "RichMarkdownSlashMenu": {
           "82c6816ff8": "No se encontraron bloques",

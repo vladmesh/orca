@@ -2577,6 +2577,11 @@ export type GlobalSettings = {
   sourceControlViewMode: SourceControlViewMode
   /** Preferred Source Control group order. Per-user, not per-workspace. */
   sourceControlGroupOrder: SourceControlGroupOrder
+  /** When enabled, the Source Control compare base defaults to the current
+   *  branch's upstream (prioritizing local changes) instead of the repo
+   *  default branch. Only affects the compare/diff view, not the PR/rebase
+   *  merge target. Per-user, not per-workspace. */
+  sourceControlCompareAgainstUpstream: boolean
   /** Whether to show the Orca app name in the titlebar. */
   showTitlebarAppName: boolean
   /** Why: some users do not use the Tasks feature and prefer to keep the
@@ -2755,6 +2760,9 @@ export type GlobalSettings = {
   mobileEmulatorEnabled?: boolean
   /** Preferred iOS Simulator UDID for UI auto-attach and agent CLI attach. */
   mobileEmulatorDefaultDeviceUdid?: string | null
+  /** Explicit Android SDK root, used when auto-discovery (ANDROID_HOME / the
+   *  default install path) does not find it. `null` (default) auto-discovers. */
+  androidSdkPath?: string | null
   /** Auto-restore window for a phone-fit PTY after the last mobile
    *  subscriber leaves. `null` (default) holds the PTY at phone size
    *  indefinitely; the desktop "Restore" banner remains the explicit

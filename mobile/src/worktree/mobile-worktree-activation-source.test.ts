@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('../../app/h/[hostId]/index.tsx', import.meta.url), 'utf8')
-const fabSource = readFileSync(new URL('./MobileCreateWorkspaceFab.tsx', import.meta.url), 'utf8')
+const fabSource = readFileSync(
+  new URL('../components/NewWorkspaceFab.tsx', import.meta.url),
+  'utf8'
+)
 
 function sliceBetween(startPattern: string, endPattern: string): string {
   const start = source.indexOf(startPattern)
@@ -28,29 +31,27 @@ describe('mobile worktree activation', () => {
       '<View style={styles.toolbar}>',
       '<Pressable style={styles.searchToggle} onPress={() => setShowSearch((s) => !s)}>'
     )
-    const mobileCreateFabUsage = sliceBetween('{!embedded ? (', '<PickerModal')
+    const mobileCreateFabUsage = sliceBetween('{!embedded && (', '<PickerModal')
     const listPadding = sliceBetween('contentContainerStyle={[', 'renderSectionHeader=')
 
     expect(phoneToolbar).not.toContain('openNewWorktreeModal')
     expect(phoneToolbar).not.toContain('styles.newButton')
 
-    expect(mobileCreateFabUsage).toContain('<MobileCreateWorkspaceFab')
-    expect(mobileCreateFabUsage).toContain('bottomOffset={insets.bottom + spacing.lg}')
-    expect(mobileCreateFabUsage).toContain("connected={connState === 'connected'}")
+    expect(mobileCreateFabUsage).toContain('<NewWorkspaceFab')
+    expect(mobileCreateFabUsage).toContain("disabled={connState !== 'connected'}")
     expect(mobileCreateFabUsage).toContain('onPress={openNewWorktreeModal}')
 
-    expect(listPadding).toContain('!embedded ? MOBILE_CREATE_WORKSPACE_FAB_LIST_CLEARANCE : 0')
+    expect(listPadding).toContain('embedded ? spacing.lg : FAB_SIZE + spacing.xl')
   })
 
   it('renders the mobile create workspace control as an accessible bottom-right FAB', () => {
     expect(fabSource).toContain("position: 'absolute'")
     expect(fabSource).toContain('right: spacing.lg')
-    expect(fabSource).toContain('disabled={!connected}')
+    expect(fabSource).toContain('disabled={disabled}')
     expect(fabSource).toContain('accessibilityRole="button"')
     expect(fabSource).toContain('accessibilityLabel="New workspace"')
-    expect(fabSource).toContain('accessibilityState={{ disabled: !connected }}')
-    expect(fabSource).toContain('Platform.select')
-    expect(fabSource).toContain('android: { elevation: 8 }')
+    expect(fabSource).toContain('accessibilityState={{ disabled: !!disabled }}')
+    expect(fabSource).toContain('elevation: 4')
   })
 
   it('preserves the embedded toolbar new workspace action', () => {

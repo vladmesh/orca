@@ -274,6 +274,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     showGitIgnoredFiles: true,
     sourceControlViewMode: 'list',
     sourceControlGroupOrder: DEFAULT_SOURCE_CONTROL_GROUP_ORDER,
+    sourceControlCompareAgainstUpstream: false,
     showTitlebarAppName: true,
     showTasksButton: true,
     showAutomationsButton: true,
@@ -336,6 +337,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     experimentalMobile: false,
     mobileEmulatorEnabled: true,
     mobileEmulatorDefaultDeviceUdid: null,
+    androidSdkPath: null,
     // Why: indefinite hold by default — the desktop "Restore" banner is the
     // explicit return-to-desktop-size action, no wall-clock guess.
     // See docs/mobile-fit-hold.md.

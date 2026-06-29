@@ -596,21 +596,26 @@ export default function TerminalPane({
   const canToggleChatForLeaf = useCallback(
     (leafId: string | null): boolean => {
       const detectedAgent = leafId ? (tabAgentTypeByLeaf[leafId] ?? null) : null
+      // Scope the "always allow toggling back" rule to the leaf actually showing
+      // chat — passing the tab-wide flag would re-enable the toggle on an
+      // unsupported sibling whenever any leaf in the split is in chat view.
+      const isChatViewForLeaf = effectiveChatViewMode && leafId !== null && chatLeafId === leafId
       return canToggleNativeChat({
         experimentalNativeChatEnabled: nativeChatEnabled,
         contentType: 'terminal',
         launchAgent: detectedAgent ? null : terminalTab?.launchAgent,
         detectedAgent,
         resolvedAgent: detectedAgent ? null : titleResolvedAgent,
-        isChatViewMode
+        isChatViewMode: isChatViewForLeaf
       })
     },
     [
       tabAgentTypeByLeaf,
+      effectiveChatViewMode,
+      chatLeafId,
       nativeChatEnabled,
       terminalTab?.launchAgent,
-      titleResolvedAgent,
-      isChatViewMode
+      titleResolvedAgent
     ]
   )
   const toggleNativeChatForLeaf = useCallback(

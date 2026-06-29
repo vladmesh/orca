@@ -53,13 +53,25 @@ describe('shouldFocusNativeChatComposerFromEditingKey', () => {
     expect(shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Delete' }))).toBe(true)
   })
 
-  it('ignores other keys, shortcut modifiers, and IME composition', () => {
+  it('ignores other keys, shortcut/editing modifiers, IME composition, and handled events', () => {
     expect(shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'a' }))).toBe(false)
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(
+        keyEvent({ key: 'Backspace', defaultPrevented: true })
+      )
+    ).toBe(false)
     expect(
       shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', metaKey: true }))
     ).toBe(false)
     expect(
       shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', ctrlKey: true }))
+    ).toBe(false)
+    // Shift/Alt chords (cut, delete-word) belong to the focused target.
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Delete', shiftKey: true }))
+    ).toBe(false)
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', altKey: true }))
     ).toBe(false)
     expect(
       shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', isComposing: true }))

@@ -7,7 +7,6 @@ import {
   useRef,
   useState
 } from 'react'
-import { translate } from '@/i18n/i18n'
 import { useAppStore } from '../../store'
 import type { AgentType } from '../../../../shared/agent-status-types'
 import { NATIVE_FILE_DROP_TARGET } from '../../../../shared/native-file-drop'
@@ -28,17 +27,16 @@ import {
   type HistoryState,
   type SlashCommandSuggestion
 } from './native-chat-composer-state'
-import { resolveImagePaste } from './native-chat-image-paste'
 import { readNativeChatDraftCache } from './native-chat-draft-cache'
 import { useNativeChatDraft } from './use-native-chat-draft'
 import { NativeChatComposerField } from './NativeChatComposerField'
 import {
-  NATIVE_CHAT_CONTEXT_PASTE_MAX_BYTES,
   nativeChatComposerTargetIsRemote,
   type NativeChatResolvedTarget
 } from './native-chat-composer-target'
 import { useNativeChatSkills } from './use-native-chat-skills'
 import { useNativeChatComposerAttachments } from './use-native-chat-composer-attachments'
+import { useNativeChatComposerPaste } from './use-native-chat-composer-paste'
 import { dispatchDictationControl } from '../dictation/dictation-control-events'
 import { useNativeChatComposerKeyDown } from './use-native-chat-composer-keydown'
 
@@ -203,44 +201,15 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
       return true
     }, [])
 
-    // Attach a clipboard image temp file as a chip, or surface the unsupported
-    // notice. Shared by the textarea paste handler and the pane-level Cmd+V path.
-    const attachClipboardImageTempFile = useCallback(
-      (tempPath: string) => {
-        const result = resolveImagePaste(agent, tempPath)
-        if (result.kind === 'unsupported') {
-          setNotice(
-            translate(
-              'components.native-chat.composer.imageUnsupported',
-              'Image paste is not supported for this agent.'
-            )
-          )
-          return
-        }
-        attachLocalPaths([result.path])
-        setNotice(null)
-      },
-      [agent, attachLocalPaths]
-    )
-
-    // Pane-level Cmd+V: an image in the clipboard becomes an attachment (TUI
-    // parity), otherwise the text is inserted at the caret. Used when the chat
-    // pane — not the textarea itself — holds focus.
-    const pasteFromClipboard = useCallback(() => {
-      void (async () => {
-        const tempPath = await window.api.ui.saveClipboardImageAsTempFile().catch(() => null)
-        if (tempPath) {
-          attachClipboardImageTempFile(tempPath)
-          return
-        }
-        const text = await window.api.ui
-          .readClipboardText({ maxBytes: NATIVE_CHAT_CONTEXT_PASTE_MAX_BYTES })
-          .catch(() => '')
-        if (text.length > 0) {
-          insertTypedText(text)
-        }
-      })()
-    }, [attachClipboardImageTempFile, insertTypedText])
+    const { handlePaste, pasteFromClipboard } = useNativeChatComposerPaste({
+      agent,
+      disabled,
+      caret,
+      attachLocalPaths,
+      insertTypedText,
+      setCaret,
+      setNotice
+    })
 
     useImperativeHandle(ref, () => ({ focus, insertTypedText, pasteFromClipboard }), [
       focus,
@@ -380,30 +349,6 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
         setNotice(null)
       },
       [agent, disabled, resolveTarget, onSlashCommand, setDraft]
-    )
-
-    const handlePaste = useCallback(
-      (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-        const hasImage = Array.from(event.clipboardData.items).some((item) =>
-          item.type.startsWith('image/')
-        )
-        if (!hasImage) {
-          return
-        }
-        event.preventDefault()
-        // Why: snapshot the caret before the async temp-file round-trip — `caret`
-        // state can move (further typing/selection) while the await is in flight.
-        const caretAtPaste = caret
-        void (async () => {
-          const tempPath = await window.api.ui.saveClipboardImageAsTempFile()
-          if (!tempPath) {
-            return
-          }
-          attachClipboardImageTempFile(tempPath)
-          setCaret(caretAtPaste)
-        })()
-      },
-      [attachClipboardImageTempFile, caret]
     )
 
     const handleKeyDown = useNativeChatComposerKeyDown({

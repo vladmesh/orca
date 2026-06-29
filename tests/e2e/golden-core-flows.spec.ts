@@ -195,17 +195,24 @@ async function continueFromNotificationsToRepo(page: Page): Promise<void> {
 }
 
 async function waitForRepoLoaded(page: Page, repoPath: string): Promise<void> {
+  const repoName = path.basename(repoPath)
   await expect
     .poll(
       () =>
-        page.evaluate((targetPath) => {
-          const state = window.__store?.getState()
-          const repo = state?.repos.find((candidate) => candidate.path === targetPath)
-          if (!state || !repo) {
-            return false
-          }
-          return (state.worktreesByRepo[repo.id] ?? []).length > 0
-        }, repoPath),
+        page.evaluate(
+          ({ targetPath, targetRepoName }) => {
+            const state = window.__store?.getState()
+            const repo = state?.repos.find(
+              (candidate) =>
+                candidate.path === targetPath || candidate.displayName === targetRepoName
+            )
+            if (!state || !repo) {
+              return false
+            }
+            return (state.worktreesByRepo[repo.id] ?? []).length > 0
+          },
+          { targetPath: repoPath, targetRepoName: repoName }
+        ),
       { timeout: 30_000, message: `repo did not load: ${repoPath}` }
     )
     .toBe(true)
@@ -260,17 +267,21 @@ async function expectActiveWorkspaceBelongsToRepo(
   workspaceName: string,
   repoPath: string
 ): Promise<void> {
+  const repoName = path.basename(repoPath)
   await expectActiveWorkspaceVisible(page, workspaceName)
   await expect
     .poll(
       () =>
         page.evaluate(
-          ({ targetRepoPath, targetWorkspaceName }) => {
+          ({ targetRepoPath, targetRepoName, targetWorkspaceName }) => {
             const state = window.__store?.getState()
             if (!state?.activeWorktreeId) {
               return null
             }
-            const repo = state.repos.find((candidate) => candidate.path === targetRepoPath)
+            const repo = state.repos.find(
+              (candidate) =>
+                candidate.path === targetRepoPath || candidate.displayName === targetRepoName
+            )
             if (!repo) {
               return null
             }
@@ -279,7 +290,7 @@ async function expectActiveWorkspaceBelongsToRepo(
             )
             return activeWorktree?.displayName === targetWorkspaceName
           },
-          { targetRepoPath: repoPath, targetWorkspaceName: workspaceName }
+          { targetRepoPath: repoPath, targetRepoName: repoName, targetWorkspaceName: workspaceName }
         ),
       { timeout: 20_000, message: 'active workspace did not belong to the newly added project' }
     )

@@ -86,6 +86,24 @@ describe('planSourceControlAgentActionLaunch', () => {
     expect(result.plan.launchCommand).not.toMatch(/^sh -c /)
   })
 
+  it('uses the plain Orca shim for SSH execution-host launch plans', () => {
+    const result = planSourceControlAgentActionLaunch({
+      agent: 'claude-agent-teams',
+      commandInput: 'Fix checks',
+      promptDelivery: 'submit-after-ready',
+      detectedAgents: ['claude-agent-teams'],
+      platform: 'linux',
+      launchHost: { connectionId: null, executionHostId: 'ssh:ssh-1' }
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+    expect(result.commandLabel).toBe('orca claude-teams')
+    expect(result.commandLabel).not.toContain('orca-ide')
+  })
+
   it('previews local Windows host launch plans with the runtime shell fallback', () => {
     const result = planSourceControlAgentActionLaunch({
       agent: 'codex',

@@ -33,6 +33,7 @@ import {
   getLocalProjectExecutionRuntimeContext,
   getLocalRepoProjectExecutionRuntimeContext
 } from '@/lib/local-preflight-context'
+import { repoIsRemote } from '../../../shared/agent-launch-remote'
 
 /**
  * "Use" flow: create the workspace, activate it, launch the default agent,
@@ -198,6 +199,10 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       projectRuntime: launchProjectRuntime,
       terminalWindowsShell: settings?.terminalWindowsShell
     })
+    const launchIsRemote = repoIsRemote({
+      connectionId: launchConnectionId,
+      executionHostId: repo.executionHostId
+    })
     if (agentOverride) {
       const detectedAgents =
         typeof launchConnectionId === 'string'
@@ -270,7 +275,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
         startupTarget: launchTarget,
         // Why: SSH hosts run the plain `orca` shim, so the Linux-only `orca-ide`
         // rename must not be applied for remote launches.
-        isRemote: typeof launchConnectionId === 'string'
+        isRemote: launchIsRemote
       }))
 
     const activation = activateAndRevealWorktree(worktreeId, {

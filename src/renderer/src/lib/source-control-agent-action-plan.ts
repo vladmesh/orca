@@ -8,6 +8,7 @@ import { resolveAgentStartupTarget, type AgentStartupTarget } from '@/lib/agent-
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { isTuiAgentEnabled } from '../../../shared/tui-agent-selection'
 import type { ProjectExecutionRuntimeResolution } from '../../../shared/project-execution-runtime'
+import { repoIsRemote } from '../../../shared/agent-launch-remote'
 import type { TuiAgent } from '../../../shared/types'
 import { translate } from '@/i18n/i18n'
 
@@ -95,7 +96,7 @@ export function planSourceControlAgentActionLaunch(args: {
       projectRuntime: args.projectRuntime
     })
   const { platform, shell } = startupTarget
-  const isRemote = args.isRemote ?? Boolean(args.launchHost?.connectionId)
+  const isRemote = args.isRemote ?? repoIsRemote(args.launchHost ?? {})
   const plannedArgs = planAgentCliArgsSuffix(args.agentArgs, shell)
   if (!plannedArgs.ok) {
     return { ok: false, error: plannedArgs.error }

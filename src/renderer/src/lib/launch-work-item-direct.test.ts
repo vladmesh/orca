@@ -612,6 +612,41 @@ describe('launchWorkItemDirect', () => {
     expect(activationOptions.startup.command).toContain('unset ORCA_PI_PREFILL')
   })
 
+  it('uses the plain Orca shim for direct launches owned by an SSH execution host', async () => {
+    mocks.ensureDetectedAgents.mockResolvedValue(['claude-agent-teams'])
+    mocks.store.repos = [
+      {
+        id: 'repo-1',
+        path: '/home/alice/repo',
+        connectionId: null,
+        executionHostId: 'ssh:ssh-1',
+        displayName: 'Remote Repo',
+        addedAt: 1
+      }
+    ]
+    const { launchWorkItemDirect } = await import('./launch-work-item-direct')
+
+    await expect(
+      launchWorkItemDirect({
+        item: {
+          title: 'Fix failing checks',
+          url: 'https://github.com/acme/repo/pull/1',
+          type: 'issue',
+          number: 1,
+          pasteContent: 'Fix the failing checks.'
+        },
+        repoId: 'repo-1',
+        openModalFallback: mocks.openModalFallback,
+        launchSource: 'task_page',
+        agentOverride: 'claude-agent-teams'
+      })
+    ).resolves.toBe(true)
+
+    const activationOptions = mocks.activateAndRevealWorktree.mock.calls.at(-1)?.[1]
+    expect(activationOptions.startup.command).toMatch(/^orca claude-teams\b/)
+    expect(activationOptions.startup.command).not.toContain('orca-ide')
+  })
+
   it('plans direct local Windows-path launches with POSIX startup for WSL project runtime', async () => {
     mocks.store.repos = [
       {

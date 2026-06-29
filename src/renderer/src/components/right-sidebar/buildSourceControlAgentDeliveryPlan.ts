@@ -2,6 +2,7 @@ import { planSourceControlAgentActionLaunch } from '@/lib/source-control-agent-a
 import { resolveAgentStartupTarget } from '@/lib/agent-startup-target'
 import { useAppStore } from '@/store'
 import type { ProjectExecutionRuntimeResolution } from '../../../../shared/project-execution-runtime'
+import { repoIsRemote } from '../../../../shared/agent-launch-remote'
 import type { Repo, TuiAgent } from '../../../../shared/types'
 import type { SourceControlAgentActionDeliveryPlanState } from './SourceControlAgentActionDialogForm'
 import { buildSourceControlAgentConnectionErrorPlan } from './source-control-agent-action-dialog-support'
@@ -43,7 +44,7 @@ export function buildSourceControlAgentDeliveryPlan({
     terminalWindowsShell: settings?.terminalWindowsShell,
     projectRuntime
   })
-  const launchIsRemote = isRemote ?? Boolean(launchHost?.connectionId)
+  const launchIsRemote = isRemote ?? repoIsRemote(launchHost ?? {})
   const result = planSourceControlAgentActionLaunch({
     agent: selectedAgent,
     commandInput,

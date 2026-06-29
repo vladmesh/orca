@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ClipboardEvent } from 'react'
+import { useCallback, useRef } from 'react'
 import { translate } from '@/i18n/i18n'
 import type { AgentType } from '../../../../shared/agent-status-types'
 import { resolveImagePaste } from './native-chat-image-paste'
@@ -16,11 +16,29 @@ export type UseNativeChatComposerPasteArgs = {
   setNotice: (notice: string | null) => void
 }
 
+/** Minimal shape shared by React's synthetic ClipboardEvent and the native DOM
+ *  ClipboardEvent — the pane-level listener delivers the native one. */
+type ClipboardEventLike = {
+  clipboardData: DataTransfer | null
+  preventDefault: () => void
+  defaultPrevented: boolean
+}
+
+function clipboardEventHasImage(event: ClipboardEventLike): boolean {
+  const data = event.clipboardData
+  if (!data) {
+    return false
+  }
+  return Array.from(data.items).some((item) => item.type.startsWith('image/'))
+}
+
 /**
  * Clipboard-paste behavior for the native chat composer: a clipboard image
  * becomes an attachment (TUI parity), otherwise text is inserted at the caret.
- * `handlePaste` is the textarea's onPaste; `pasteFromClipboard` is the
- * pane-level Cmd/Ctrl+V path used when the pane (not the field) holds focus.
+ * `handlePaste` consumes a paste event (the textarea's onPaste *or* the
+ * pane-level capture listener — the OS often retargets the event off the
+ * focused textarea, so the pane listener is the reliable path);
+ * `pasteFromClipboard` is the menu-driven path with no event in hand.
  */
 export function useNativeChatComposerPaste({
   agent,
@@ -31,7 +49,7 @@ export function useNativeChatComposerPaste({
   setCaret,
   setNotice
 }: UseNativeChatComposerPasteArgs): {
-  handlePaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void
+  handlePaste: (event: ClipboardEventLike) => void
   pasteFromClipboard: () => void
 } {
   // Re-read the live disabled state after the async clipboard round-trip:
@@ -59,11 +77,17 @@ export function useNativeChatComposerPaste({
   )
 
   const handlePaste = useCallback(
-    (event: ClipboardEvent<HTMLTextAreaElement>) => {
-      const hasImage = Array.from(event.clipboardData.items).some((item) =>
-        item.type.startsWith('image/')
-      )
-      if (!hasImage) {
+    (event: ClipboardEventLike) => {
+      // Dedupe: the pane-level capture listener runs first and preventDefaults
+      // images, so the textarea's bubble-phase onPaste must not attach again.
+      if (event.defaultPrevented) {
+        return
+      }
+      // Only an image needs interception; plain text falls through so the
+      // textarea's native paste keeps its caret/undo behavior when it is the
+      // event target. (When the OS retargets the paste off the textarea the
+      // pane listener still routes text via pasteFromClipboard.)
+      if (!clipboardEventHasImage(event)) {
         return
       }
       event.preventDefault()
@@ -71,7 +95,7 @@ export function useNativeChatComposerPaste({
       // state can move (further typing/selection) while the await is in flight.
       const caretAtPaste = caret
       void (async () => {
-        const tempPath = await window.api.ui.saveClipboardImageAsTempFile()
+        const tempPath = await window.api.ui.saveClipboardImageAsTempFile().catch(() => null)
         if (!tempPath || disabledRef.current) {
           return
         }

@@ -43,7 +43,6 @@ import {
 } from './native-chat-typing-redirect'
 import { useNativeChatContextMenu } from './use-native-chat-context-menu'
 import type { NativeChatContextMenuActions } from './use-native-chat-context-menu'
-import { isMacPlatform } from './native-chat-shortcut'
 
 const emptyNativeChatContextMenuActions: Omit<NativeChatContextMenuActions, 'onPaste'> = {
   onSplitRight: () => {},
@@ -165,7 +164,6 @@ function NativeChatResolvedView({
   const [workingInterrupted, setWorkingInterrupted] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<NativeChatComposerHandle>(null)
-  const isMac = useMemo(() => isMacPlatform(), [])
   // Delegate to the composer so a pane-level Cmd/Ctrl+V (or context-menu /
   // app-menu paste) attaches a clipboard image when present, falling back to
   // text — matching the textarea's own paste behavior and the hosted TUI.
@@ -181,28 +179,26 @@ function NativeChatResolvedView({
     }
   })
 
+  // Handle Cmd/Ctrl+V at the pane root rather than relying on the composer
+  // textarea's own onPaste: the React-bound onPaste proved unreliable here (the
+  // composer can mount more than once, and the live `paste` event does not
+  // consistently dispatch to the textarea's React handler). A root capture
+  // listener catches the paste for the focused pane in every case.
   useEffect(() => {
     const root = rootRef.current
     if (!root) {
       return
     }
-    const onKeyPaste = (event: KeyboardEvent): void => {
-      if (
-        !matchesNativeChatPasteShortcut(event, isMac) ||
-        !shouldFocusNativeChatPaneFromPointerTarget(event.target)
-      ) {
-        return
-      }
-      event.preventDefault()
-      event.stopPropagation()
-      pasteClipboardIntoComposer()
+    const onPaste = (event: ClipboardEvent): void => {
+      composerRef.current?.handlePasteEvent(event)
     }
-
-    root.addEventListener('keydown', onKeyPaste, { capture: true })
+    // Capture phase so the image is intercepted before the textarea's own
+    // bubble-phase onPaste fires (which would otherwise attach it twice).
+    root.addEventListener('paste', onPaste, { capture: true })
     return () => {
-      root.removeEventListener('keydown', onKeyPaste, { capture: true })
+      root.removeEventListener('paste', onPaste, { capture: true })
     }
-  }, [isMac, pasteClipboardIntoComposer])
+  }, [])
 
   useEffect(() => {
     const onAppMenuPaste = (event: Event): void => {
@@ -419,14 +415,4 @@ function NativeChatResolvedView({
       {contextMenu.menu}
     </div>
   )
-}
-
-function matchesNativeChatPasteShortcut(
-  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
-  isMac: boolean
-): boolean {
-  if (event.altKey || event.shiftKey || event.key.toLowerCase() !== 'v') {
-    return false
-  }
-  return isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
 }

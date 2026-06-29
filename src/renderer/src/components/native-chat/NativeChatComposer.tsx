@@ -75,8 +75,16 @@ export type NativeChatComposerProps = {
 export type NativeChatComposerHandle = {
   focus: () => boolean
   insertTypedText: (text: string) => boolean
-  /** Paste the clipboard into the composer: an image becomes an attachment,
-   *  otherwise text is inserted at the caret. */
+  /** Handle a paste event captured at the pane root (the OS frequently
+   *  retargets the paste off the focused textarea, so its own onPaste can't be
+   *  relied on). An image is intercepted and attached; text falls through. */
+  handlePasteEvent: (event: {
+    clipboardData: DataTransfer | null
+    preventDefault: () => void
+    defaultPrevented: boolean
+  }) => void
+  /** Paste the clipboard into the composer with no event in hand (menu paste):
+   *  an image becomes an attachment, otherwise text is inserted at the caret. */
   pasteFromClipboard: () => void
 }
 
@@ -211,11 +219,11 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
       setNotice
     })
 
-    useImperativeHandle(ref, () => ({ focus, insertTypedText, pasteFromClipboard }), [
-      focus,
-      insertTypedText,
-      pasteFromClipboard
-    ])
+    useImperativeHandle(
+      ref,
+      () => ({ focus, insertTypedText, handlePasteEvent: handlePaste, pasteFromClipboard }),
+      [focus, insertTypedText, handlePaste, pasteFromClipboard]
+    )
 
     useEffect(() => {
       return window.api.ui.onFileDrop((payload) => {

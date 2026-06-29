@@ -37,6 +37,7 @@ import {
   nativeChatStreamingMessage
 } from '../../../../shared/native-chat-streaming'
 import {
+  shouldFocusNativeChatComposerFromEditingKey,
   shouldFocusNativeChatPaneFromPointerTarget,
   shouldRedirectNativeChatTyping
 } from './native-chat-typing-redirect'
@@ -44,7 +45,6 @@ import { useNativeChatContextMenu } from './use-native-chat-context-menu'
 import type { NativeChatContextMenuActions } from './use-native-chat-context-menu'
 import { isMacPlatform } from './native-chat-shortcut'
 
-const NATIVE_CHAT_CONTEXT_PASTE_MAX_BYTES = 16 * 1024 * 1024
 const emptyNativeChatContextMenuActions: Omit<NativeChatContextMenuActions, 'onPaste'> = {
   onSplitRight: () => {},
   onSplitDown: () => {},
@@ -166,15 +166,11 @@ function NativeChatResolvedView({
   const rootRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<NativeChatComposerHandle>(null)
   const isMac = useMemo(() => isMacPlatform(), [])
+  // Delegate to the composer so a pane-level Cmd/Ctrl+V (or context-menu /
+  // app-menu paste) attaches a clipboard image when present, falling back to
+  // text — matching the textarea's own paste behavior and the hosted TUI.
   const pasteClipboardIntoComposer = useCallback(() => {
-    void window.api.ui
-      .readClipboardText({ maxBytes: NATIVE_CHAT_CONTEXT_PASTE_MAX_BYTES })
-      .then((text) => {
-        if (text.length > 0) {
-          composerRef.current?.insertTypedText(text)
-        }
-      })
-      .catch(() => {})
+    composerRef.current?.pasteFromClipboard()
   }, [])
   const contextMenu = useNativeChatContextMenu({
     rootRef,
@@ -367,6 +363,12 @@ function NativeChatResolvedView({
         }
       }}
       onKeyDownCapture={(event) => {
+        // Backspace/Delete outside an input focuses the composer (like typing)
+        // but inserts nothing — let the now-focused field handle the keystroke.
+        if (shouldFocusNativeChatComposerFromEditingKey(event)) {
+          composerRef.current?.focus()
+          return
+        }
         if (!shouldRedirectNativeChatTyping(event)) {
           return
         }

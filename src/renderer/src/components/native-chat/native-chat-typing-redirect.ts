@@ -43,6 +43,22 @@ export function shouldFocusNativeChatPaneFromPointerTarget(target: EventTarget |
   return !isNativeChatInteractiveTarget(target)
 }
 
+/** Backspace/Delete pressed outside any input should focus the composer, the
+ *  same way printable typing does — but unlike typing these keys are not
+ *  inserted (their character has no literal form), so the caller only focuses. */
+export function shouldFocusNativeChatComposerFromEditingKey(event: KeyboardRedirectEvent): boolean {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.ctrlKey ||
+    event.metaKey ||
+    (event.key !== 'Backspace' && event.key !== 'Delete')
+  ) {
+    return false
+  }
+  return !isNativeChatInteractiveTarget(event.target)
+}
+
 function isNativeChatInteractiveTarget(target: EventTarget | null): boolean {
   const element = eventTargetElement(target)
   if (!element) {

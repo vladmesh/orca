@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  shouldFocusNativeChatComposerFromEditingKey,
   shouldFocusNativeChatPaneFromPointerTarget,
   shouldRedirectNativeChatTyping
 } from './native-chat-typing-redirect'
@@ -43,6 +44,34 @@ describe('shouldRedirectNativeChatTyping', () => {
 
   it('leaves interactive targets alone', () => {
     expect(shouldRedirectNativeChatTyping(keyEvent({ target: interactiveTarget() }))).toBe(false)
+  })
+})
+
+describe('shouldFocusNativeChatComposerFromEditingKey', () => {
+  it('focuses the composer on Backspace/Delete from the pane', () => {
+    expect(shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace' }))).toBe(true)
+    expect(shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Delete' }))).toBe(true)
+  })
+
+  it('ignores other keys, shortcut modifiers, and IME composition', () => {
+    expect(shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'a' }))).toBe(false)
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', metaKey: true }))
+    ).toBe(false)
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', ctrlKey: true }))
+    ).toBe(false)
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(keyEvent({ key: 'Backspace', isComposing: true }))
+    ).toBe(false)
+  })
+
+  it('leaves interactive targets (the textarea itself) alone', () => {
+    expect(
+      shouldFocusNativeChatComposerFromEditingKey(
+        keyEvent({ key: 'Backspace', target: interactiveTarget() })
+      )
+    ).toBe(false)
   })
 })
 

@@ -29,8 +29,11 @@ import {
   type SlashCommandSuggestion
 } from './native-chat-composer-state'
 import { resolveImagePaste } from './native-chat-image-paste'
+import { readNativeChatDraftCache } from './native-chat-draft-cache'
+import { useNativeChatDraft } from './use-native-chat-draft'
 import { NativeChatComposerField } from './NativeChatComposerField'
 import {
+  NATIVE_CHAT_CONTEXT_PASTE_MAX_BYTES,
   nativeChatComposerTargetIsRemote,
   type NativeChatResolvedTarget
 } from './native-chat-composer-target'
@@ -74,6 +77,9 @@ export type NativeChatComposerProps = {
 export type NativeChatComposerHandle = {
   focus: () => boolean
   insertTypedText: (text: string) => boolean
+  /** Paste the clipboard into the composer: an image becomes an attachment,
+   *  otherwise text is inserted at the caret. */
+  pasteFromClipboard: () => void
 }
 
 /**
@@ -98,8 +104,11 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
     },
     ref
   ): React.JSX.Element {
-    const [draft, setDraft] = useState('')
-    const [caret, setCaret] = useState(0)
+    // Scope key shared with image attachments so an unsent draft + its attached
+    // images survive the composer unmounting on a TUI/GUI toggle.
+    const draftScopeKey = targetPtyId ?? terminalTabId
+    const { draft, setDraft } = useNativeChatDraft(draftScopeKey)
+    const [caret, setCaret] = useState(draft.length)
     const [history, setHistory] = useState<HistoryState>(EMPTY_HISTORY)
     const [activeSuggestion, setActiveSuggestion] = useState(0)
     const [notice, setNotice] = useState<string | null>(null)
@@ -115,6 +124,15 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
       dictationState === 'starting' ||
       dictationState === 'listening' ||
       dictationState === 'stopping'
+
+    // Place the caret at the end of the (possibly restored) draft when the
+    // composer is reused for a different pane. Adjusted during render (matching
+    // the draft reload) so caret and text stay consistent on the first paint.
+    const lastDraftScopeKey = useRef(draftScopeKey)
+    if (lastDraftScopeKey.current !== draftScopeKey) {
+      lastDraftScopeKey.current = draftScopeKey
+      setCaret(readNativeChatDraftCache(draftScopeKey).length)
+    }
 
     const agentCommands = useMemo(() => getAgentSlashCommands(agent), [agent])
     const autocomplete = useMemo(
@@ -173,7 +191,7 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
         })
         return true
       },
-      [caret, draft]
+      [caret, draft, setDraft]
     )
 
     const focus = useCallback((): boolean => {
@@ -185,7 +203,50 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
       return true
     }, [])
 
-    useImperativeHandle(ref, () => ({ focus, insertTypedText }), [focus, insertTypedText])
+    // Attach a clipboard image temp file as a chip, or surface the unsupported
+    // notice. Shared by the textarea paste handler and the pane-level Cmd+V path.
+    const attachClipboardImageTempFile = useCallback(
+      (tempPath: string) => {
+        const result = resolveImagePaste(agent, tempPath)
+        if (result.kind === 'unsupported') {
+          setNotice(
+            translate(
+              'components.native-chat.composer.imageUnsupported',
+              'Image paste is not supported for this agent.'
+            )
+          )
+          return
+        }
+        attachLocalPaths([result.path])
+        setNotice(null)
+      },
+      [agent, attachLocalPaths]
+    )
+
+    // Pane-level Cmd+V: an image in the clipboard becomes an attachment (TUI
+    // parity), otherwise the text is inserted at the caret. Used when the chat
+    // pane — not the textarea itself — holds focus.
+    const pasteFromClipboard = useCallback(() => {
+      void (async () => {
+        const tempPath = await window.api.ui.saveClipboardImageAsTempFile().catch(() => null)
+        if (tempPath) {
+          attachClipboardImageTempFile(tempPath)
+          return
+        }
+        const text = await window.api.ui
+          .readClipboardText({ maxBytes: NATIVE_CHAT_CONTEXT_PASTE_MAX_BYTES })
+          .catch(() => '')
+        if (text.length > 0) {
+          insertTypedText(text)
+        }
+      })()
+    }, [attachClipboardImageTempFile, insertTypedText])
+
+    useImperativeHandle(ref, () => ({ focus, insertTypedText, pasteFromClipboard }), [
+      focus,
+      insertTypedText,
+      pasteFromClipboard
+    ])
 
     useEffect(() => {
       return window.api.ui.onFileDrop((payload) => {
@@ -270,7 +331,8 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
       disabled,
       resolveTarget,
       onOptimisticSend,
-      onSlashCommand
+      onSlashCommand,
+      setDraft
     ])
 
     const interrupt = useCallback(() => {
@@ -285,13 +347,16 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
       sendRuntimePtyInput(target.settings, target.ptyId, ESC)
     }, [isWorking, onStop, resolveTarget])
 
-    const chooseSlash = useCallback((command: SlashCommandSuggestion) => {
-      const next = applySlashSuggestion(command)
-      setDraft(next)
-      setCaret(next.length)
-      setActiveSuggestion(0)
-      textareaRef.current?.focus()
-    }, [])
+    const chooseSlash = useCallback(
+      (command: SlashCommandSuggestion) => {
+        const next = applySlashSuggestion(command)
+        setDraft(next)
+        setCaret(next.length)
+        setActiveSuggestion(0)
+        textareaRef.current?.focus()
+      },
+      [setDraft]
+    )
 
     const dispatchSlash = useCallback(
       (command: SlashCommandSuggestion) => {
@@ -314,7 +379,7 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
         setActiveSuggestion(0)
         setNotice(null)
       },
-      [agent, disabled, resolveTarget, onSlashCommand]
+      [agent, disabled, resolveTarget, onSlashCommand, setDraft]
     )
 
     const handlePaste = useCallback(
@@ -334,22 +399,11 @@ export const NativeChatComposer = forwardRef<NativeChatComposerHandle, NativeCha
           if (!tempPath) {
             return
           }
-          const result = resolveImagePaste(agent, tempPath)
-          if (result.kind === 'unsupported') {
-            setNotice(
-              translate(
-                'components.native-chat.composer.imageUnsupported',
-                'Image paste is not supported for this agent.'
-              )
-            )
-            return
-          }
-          attachLocalPaths([result.path])
+          attachClipboardImageTempFile(tempPath)
           setCaret(caretAtPaste)
-          setNotice(null)
         })()
       },
-      [agent, attachLocalPaths, caret]
+      [attachClipboardImageTempFile, caret]
     )
 
     const handleKeyDown = useNativeChatComposerKeyDown({

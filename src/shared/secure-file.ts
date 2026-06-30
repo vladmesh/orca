@@ -123,6 +123,7 @@ export function hardenExistingSecureFile(targetPath: string): void {
   }
 }
 
+/** Applies the platform-appropriate permission restriction to a path once, bypassing the cache. */
 export function hardenSecurePath(
   targetPath: string,
   options: {
@@ -139,6 +140,7 @@ export function hardenSecurePath(
   )
 }
 
+/** Restricts a path to the current user (Windows ACL or POSIX chmod). Returns whether it applied. */
 function applySecurePathRestriction(
   targetPath: string,
   isDirectory: boolean,

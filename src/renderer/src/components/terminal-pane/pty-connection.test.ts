@@ -10445,6 +10445,80 @@ describe('connectPanePty', () => {
       expect(manager.closePane).toHaveBeenCalledWith(2)
     })
 
+    it('does NOT tear down a newborn pane when the snapshot was requested before it bound', async () => {
+      // Why (regression): a snapshot requested before the spawn bound cannot
+      // prove the fresh ptyId dead. Drives the REAL reconcile body to prove the
+      // boundAt wiring, not just forwarding.
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      // Why: clear the freshly-split early-return guard so the ONLY remaining
+      // protection is the freshness guard this test exercises.
+      capturedDataCallback.current?.('shell prompt')
+      const onPtySpawn = createdTransportOptions[0]?.onPtySpawn as
+        | ((ptyId: string) => void)
+        | undefined
+      expect(onPtySpawn).toBeTypeOf('function')
+
+      // Record boundAt via the spawn chokepoint; bracket it with a real timestamp.
+      const beforeSpawn = performance.now()
+      onPtySpawn?.('pty-pane-2')
+
+      // requestedAt < boundAt: stale snapshot can't prove the fresh pane dead.
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']), beforeSpawn - 1)
+
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('tears down the pane when the snapshot was requested after it bound', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      // Why: clear the freshly-split early-return guard so onExit reaches close.
+      capturedDataCallback.current?.('shell prompt')
+      const onPtySpawn = createdTransportOptions[0]?.onPtySpawn as
+        | ((ptyId: string) => void)
+        | undefined
+      expect(onPtySpawn).toBeTypeOf('function')
+
+      onPtySpawn?.('pty-pane-2')
+      const afterSpawn = performance.now()
+
+      // requestedAt > boundAt: the snapshot postdates the bind, so absence is real.
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']), afterSpawn + 1)
+
+      expect(manager.closePane).toHaveBeenCalledWith(2)
+    })
+
     it('routes the last pane through onPtyExitRef when its session is dead', async () => {
       const { connectPanePty } = await import('./pty-connection')
       const transport = createMockTransport('pty-pane-1')
@@ -10699,7 +10773,7 @@ describe('connectPanePty', () => {
       }
     }
 
-    it('fires listSessions at most once across many keystrokes in one resume window', async () => {
+    it('does not fire listSessions for first input on a fresh mount', async () => {
       const listSessions = vi.mocked(window.api.pty.listSessions)
       listSessions.mockClear()
       const { typeKeystroke } = await connectActivePaneWithInput()
@@ -10708,19 +10782,31 @@ describe('connectPanePty', () => {
         typeKeystroke('x')
       }
 
-      expect(listSessions).toHaveBeenCalledTimes(1)
+      expect(listSessions).not.toHaveBeenCalled()
     })
 
-    it('re-arms one re-check after a visibility resume', async () => {
+    it('fires listSessions once for the first input after a visibility resume', async () => {
       const listSessions = vi.mocked(window.api.pty.listSessions)
       listSessions.mockClear()
       const { binding, typeKeystroke } = await connectActivePaneWithInput()
 
+      binding.noteVisibilityResume()
+      typeKeystroke('a')
+      typeKeystroke('b')
+
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-arms one re-check after a second visibility resume', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { binding, typeKeystroke } = await connectActivePaneWithInput()
+
+      binding.noteVisibilityResume()
       typeKeystroke('a')
       typeKeystroke('b')
       expect(listSessions).toHaveBeenCalledTimes(1)
 
-      // Resume re-arms exactly one more re-check.
       binding.noteVisibilityResume()
       typeKeystroke('c')
       typeKeystroke('d')
@@ -10743,8 +10829,35 @@ describe('connectPanePty', () => {
         paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
       })
       const pane = createPane(2)
-      connectPanePty(pane as never, manager as never, deps as never)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
 
+      binding.noteVisibilityResume()
+      sendTerminalInputThroughPane(pane, 'x')
+      sendTerminalInputThroughPane(pane, 'y')
+
+      expect(listSessions).not.toHaveBeenCalled()
+    })
+
+    it('never fires listSessions for an SSH pane after resume', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('ssh-pty-2')
+      transport.getConnectionId.mockReturnValue('ssh-connection-1')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+      const pane = createPane(2)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
+
+      binding.noteVisibilityResume()
       sendTerminalInputThroughPane(pane, 'x')
       sendTerminalInputThroughPane(pane, 'y')
 

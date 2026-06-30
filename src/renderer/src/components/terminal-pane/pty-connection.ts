@@ -522,7 +522,7 @@ let inactiveForegroundImmediateBudgetWindowStart = 0
 type PanePtyBinding = IDisposable & {
   syncProcessTracking: () => void
   noteVisibilityResume: () => void
-  reconcileIfSessionDead: (liveSessionIds: Set<string>) => void
+  reconcileIfSessionDead: (liveSessionIds: Set<string>, snapshotRequestedAt?: number) => void
 }
 
 function isAgentTaskCompleteNotificationEnabled(): boolean {
@@ -1308,11 +1308,15 @@ export function connectPanePty(
     pane.container.dataset.ptyId = ptyId
   }
   let activePanePtyBinding: string | null = null
+  // Why: bind time so reconcile can ignore a listSessions snapshot requested
+  // before this PTY bound (newborn race). Null disables the guard (fail-safe).
+  let activePanePtyBindingBoundAt: number | null = null
   const clearPanePtyFitBinding = (): void => {
     // Why: fit bindings live in a module-level map, so pane teardown must
     // clear them explicitly instead of relying on DOM removal.
     bindPanePtyId(pane.id, null, deps.tabId)
     activePanePtyBinding = null
+    activePanePtyBindingBoundAt = null
     delete pane.container.dataset.ptyId
   }
 
@@ -1601,6 +1605,9 @@ export function connectPanePty(
   ): void => {
     setPanePtyFitBinding(ptyId)
     activePanePtyBinding = ptyId
+    // Why: record bind time on the spawn/attach chokepoint so the reconcile
+    // guard knows this binding is newer than any pre-bind snapshot.
+    activePanePtyBindingBoundAt = performance.now()
     deps.syncPanePtyLayoutBinding(pane.id, ptyId)
     const tabPtyIds = useAppStore.getState().ptyIdsByTabId?.[deps.tabId] ?? []
     if (options.updateTabPtyId !== 'if-missing' || !tabPtyIds.includes(ptyId)) {
@@ -2282,7 +2289,11 @@ export function connectPanePty(
         const rows = pane.terminal.rows
         return cols > 0 && rows > 0 ? { cols, rows } : null
       },
-      resize: (cols, rows) => transport.resize(cols, rows),
+      resize: (cols, rows) => {
+        if (!shouldSuppressDesktopPtyResize()) {
+          transport.resize(cols, rows)
+        }
+      },
       // Why: confirm the PTY actually applied the size we forwarded before the
       // reconcile hands off. transport.resize is fire-and-forget for daemon/SSH
       // PTYs, so the loop can otherwise settle on a size the PTY dropped, leaving
@@ -2310,11 +2321,15 @@ export function connectPanePty(
   let reassertingPtySizeOnResume = false
   const reassertPtySizeOnResume = (): void => {
     const ptyId = transport.getPtyId()
-    // forwardPtyResize re-checks the visibility/mobile gates at send time, so
-    // here we only need the cheap pre-hop early-outs. Skip remote-runtime PTYs:
-    // their resize goes through a separate viewport channel (not pty:resize), so
-    // the local ptySizes map getSize reads is never populated for them.
-    if (disposed || reassertingPtySizeOnResume || !ptyId || isRemoteRuntimePtyId(ptyId)) {
+    // Skip parked/mobile-driven PTYs before the async size read: their drift
+    // from desktop xterm dims is intentional until mobile hands control back.
+    if (
+      disposed ||
+      reassertingPtySizeOnResume ||
+      !ptyId ||
+      isRemoteRuntimePtyId(ptyId) ||
+      shouldSuppressDesktopPtyResize()
+    ) {
       return
     }
     reassertingPtySizeOnResume = true
@@ -4529,7 +4544,10 @@ export function connectPanePty(
   // reattach racing the listSessions snapshot is never clobbered, and respect
   // the remote/SSH guards. Suppression semantics come for free via onExit
   // (which consults consumeSuppressedPtyExit) plus the per-ptyId guard above.
-  const reconcileIfSessionDead = (liveSessionIds: Set<string>): void => {
+  const reconcileIfSessionDead = (
+    liveSessionIds: Set<string>,
+    snapshotRequestedAt?: number
+  ): void => {
     if (disposed) {
       return
     }
@@ -4542,7 +4560,9 @@ export function connectPanePty(
       !shouldReconcileDeadSession({
         ptyId: currentPtyId,
         connectionId: transport.getConnectionId?.(),
-        liveSessionIds
+        liveSessionIds,
+        ptyBoundAt: activePanePtyBindingBoundAt,
+        snapshotRequestedAt
       })
     ) {
       return
@@ -4550,19 +4570,11 @@ export function connectPanePty(
     onExit(currentPtyId)
   }
 
-  // Why (perf): the only moment a daemon session can be reaped behind the
-  // renderer's back is while the pane was surface-hidden. So the input-driven
-  // re-check is only useful in the window right after a resume — once it (or
-  // the resume pass) has confirmed liveness for this resume, re-polling on
-  // every subsequent keystroke is pure waste: listSessions() is a
-  // renderer→main→daemon round-trip (DaemonPtyAdapter.listProcesses requests
-  // `listSessions` from the daemon subprocess), so an ungated per-keystroke
-  // re-check would put a process-enumeration round-trip on the typing hot path
-  // for every healthy local pane. Fire at most ONCE per resume window; reset
-  // on the next hide→show. This preserves the "reduces not eliminates the
-  // first-keystroke drop" intent — the first keystroke after a resume still
-  // triggers exactly one re-check.
-  let livenessRecheckFiredSinceResume = false
+  // Why (perf + startup correctness): listSessions() is authoritative only
+  // after a real visibility resume. Fresh PTY startup can briefly lag the daemon
+  // listing, so newborn terminals start disarmed and noteVisibilityResume grants
+  // exactly one first-input liveness probe for the next resume window.
+  let livenessRecheckArmedForResume = false
 
   // Why (Defect #2 defense-in-depth): in the broken state sendInput returns
   // true (connected/ptyId still set) so the dropped keystroke is invisible to
@@ -4571,9 +4583,13 @@ export function connectPanePty(
   // pass alone. It REDUCES but cannot eliminate the first-keystroke drop (that
   // byte is already gone daemon-side).
   const recheckLivenessAfterInput = (): void => {
-    if (disposed || livenessRecheckFiredSinceResume) {
+    if (disposed || !livenessRecheckArmedForResume) {
       return
     }
+    // Why: consume the resume token before inspecting provider details so SSH,
+    // remote-runtime, and concurrent keystrokes cannot retry this hot-path check
+    // until the lifecycle reports another true hidden-to-visible resume.
+    livenessRecheckArmedForResume = false
     const currentPtyId = transport.getPtyId()
     const currentConnectionId = transport.getConnectionId?.()
     if (
@@ -4588,13 +4604,13 @@ export function connectPanePty(
     ) {
       return
     }
-    // Why: set BEFORE the IPC so concurrent keystrokes coalesce to one in-flight
-    // request rather than fanning out a round-trip per byte typed.
-    livenessRecheckFiredSinceResume = true
+    // Why: capture request time before the round-trip so a pane that bound after
+    // this request is not torn down by its (pre-bind) stale snapshot.
+    const requestedAt = performance.now()
     void window.api.pty
       .listSessions()
       .then((sessions) => {
-        reconcileIfSessionDead(new Set(sessions.map((session) => session.id)))
+        reconcileIfSessionDead(new Set(sessions.map((session) => session.id)), requestedAt)
       })
       // Why: a rejected listing is "unknown" — never close a pane on it.
       .catch(() => {})
@@ -4608,7 +4624,7 @@ export function connectPanePty(
     // visible again. Called from the lifecycle visibility effect; the gate
     // keeps the typing hot path off the listSessions IPC between resumes.
     noteVisibilityResume() {
-      livenessRecheckFiredSinceResume = false
+      livenessRecheckArmedForResume = true
       // Why: re-assert the PTY size on resume so a resize that was dropped while
       // this pane was hidden self-heals on show, instead of waiting for a manual
       // resize that may never change xterm's column count.

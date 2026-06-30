@@ -35,6 +35,7 @@ export function resetSkillDiscoveryCacheForTests(): void {
   pendingDiscoverySatisfiesForcedRefreshByTarget = new Map()
 }
 
+/** Collapse a target to the minimal shape the discovery layer needs: project runtime → host/wsl, else the raw host/wsl target. */
 function normalizeSkillDiscoveryTarget(
   target: SkillDiscoveryTarget | undefined
 ): SkillDiscoveryTarget | undefined {
@@ -87,6 +88,7 @@ export function getRuntimeScopedSkillDiscoveryKey(
     : base
 }
 
+/** Start a fresh scan for a runtime-scoped key, tracking it as in-flight and caching the result. */
 function startInstalledAgentSkillDiscovery(
   force: boolean,
   target: SkillDiscoveryTarget | undefined,

@@ -218,7 +218,7 @@ export default function SkillsPage(): React.JSX.Element {
       console.error('Failed to discover skills:', error)
       if (mountedRef.current) {
         toast.error(
-          translate('auto.components.skills.SkillsPage.ea72d6185b', 'Could not scan local skills')
+          translate('auto.components.skills.SkillsPage.ea72d6185b', 'Could not scan skills')
         )
       }
     } finally {

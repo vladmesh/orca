@@ -42,18 +42,22 @@ export type InstalledAgentSkillState = {
   refresh: () => Promise<boolean>
 }
 
+/** Lower-case and trim a skill name for case-insensitive matching. */
 function normalizeSkillName(value: string): string {
   return value.trim().toLowerCase()
 }
 
+/** Whether a name refers to the orchestration skill. */
 function isOrchestrationSkillName(skillName: string): boolean {
   return normalizeSkillName(skillName) === ORCHESTRATION_SKILL_NAME
 }
 
+/** Last path segment, tolerant of both `/` and `\` separators. */
 function basenameFromPath(pathValue: string): string {
   return pathValue.split(/[\\/]/).filter(Boolean).at(-1) ?? pathValue
 }
 
+/** Whether `skills` contains an installed skill named `skillName`. */
 export function hasInstalledAgentSkill(
   skills: readonly DiscoveredSkill[],
   skillName: string,
@@ -62,6 +66,7 @@ export function hasInstalledAgentSkill(
   return hasInstalledAgentSkillNamed(skills, [skillName], options)
 }
 
+/** Whether `skills` has an installed skill matching any of `skillNames` (by name or directory basename), optionally restricted to `sourceKinds`. */
 export function hasInstalledAgentSkillNamed(
   skills: readonly DiscoveredSkill[],
   skillNames: readonly string[],
@@ -89,6 +94,7 @@ export const _installedAgentSkillDiscoveryInternalsForTests = {
   reset: resetSkillDiscoveryCacheForTests
 }
 
+/** Track whether a single named skill is installed on the active runtime. */
 export function useInstalledAgentSkill(
   skillName: string,
   options: InstalledAgentSkillOptions = {}
@@ -96,6 +102,7 @@ export function useInstalledAgentSkill(
   return useInstalledAgentSkillNames([skillName], options)
 }
 
+/** Track whether any of `skillNames` is installed on the active runtime, with loading/error state and a manual refresh. */
 export function useInstalledAgentSkillNames(
   skillNames: readonly string[],
   options: InstalledAgentSkillOptions = {}

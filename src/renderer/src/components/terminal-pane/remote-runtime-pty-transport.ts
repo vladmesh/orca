@@ -48,6 +48,11 @@ function isRemoteTerminalGoneMessage(message: string): boolean {
   )
 }
 
+/**
+ * PTY transport backing a renderer terminal pane with a terminal on a remote Orca
+ * runtime, over runtime RPC plus the multiplexed stream (create, subscribe, input,
+ * resize, close, reattach).
+ */
 export function createRemoteRuntimePtyTransport(
   runtimeEnvironmentId: string,
   opts: IpcPtyTransportOptions = {}

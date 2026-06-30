@@ -31,6 +31,10 @@ type OnboardingInlineCommandTerminalProps = {
   onTerminalExit?: () => void
 }
 
+/**
+ * Inline pane that runs a one-off setup command (skill install, feature tip) in an
+ * ephemeral floating-scoped terminal, auto-inserting the command once the PTY is ready.
+ */
 export function OnboardingInlineCommandTerminal({
   command,
   title,

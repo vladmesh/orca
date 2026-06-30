@@ -163,6 +163,7 @@ function applySecurePathRestriction(
   return true
 }
 
+/** Caches the current metadata snapshot for a just-hardened path, or clears it if the path is gone. */
 function rememberHardenedPath(targetPath: string, isDirectory: boolean): void {
   const entry = getHardenedPathCacheEntry(targetPath, isDirectory)
   if (entry) {

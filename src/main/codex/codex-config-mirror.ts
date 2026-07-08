@@ -116,6 +116,11 @@ function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: 
       .filter((section) => isRuntimeProjectTomlSection(section.header))
       .map((section) => getTomlSectionHeaderKey(section.header))
   )
+  const systemMcpServerHeaders = new Set(
+    getTomlSections(systemConfig)
+      .filter((section) => isCodexMcpServerTomlSection(section.header))
+      .map((section) => getTomlSectionHeaderKey(section.header))
+  )
   const systemUntrustedProjectHeaders = new Set(
     getTomlSections(systemConfig)
       .filter((section) => isRuntimeProjectTomlSection(section.header))
@@ -125,7 +130,9 @@ function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: 
   // Why: ordinary Codex settings should mirror ~/.codex exactly; runtime hook
   // trust and project trust are written under Orca's managed CODEX_HOME and
   // must survive the copy unless the user explicitly revoked project trust in
-  // the system config.
+  // the system config. Runtime MCP servers are also preserved: Codex tools are
+  // loaded from the managed CODEX_HOME, and losing these sections silently
+  // removes user-visible tools such as shared memory.
   return joinTomlBlocks([
     stripRuntimeOwnedTomlSections(systemConfig, runtimeProjectHeaders),
     ...runtimeSections
@@ -134,6 +141,11 @@ function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: 
         (section) =>
           !isRuntimeProjectTomlSection(section.header) ||
           !systemUntrustedProjectHeaders.has(getTomlSectionHeaderKey(section.header))
+      )
+      .filter(
+        (section) =>
+          !isCodexMcpServerTomlSection(section.header) ||
+          !systemMcpServerHeaders.has(getTomlSectionHeaderKey(section.header))
       )
       .map((section) => section.block)
   ])
@@ -213,7 +225,11 @@ function getTomlSections(config: string): TomlSection[] {
 }
 
 function isRuntimePreservedTomlSection(header: string): boolean {
-  return isRuntimeHookTrustTomlSection(header) || isRuntimeProjectTomlSection(header)
+  return (
+    isRuntimeHookTrustTomlSection(header) ||
+    isRuntimeProjectTomlSection(header) ||
+    isCodexMcpServerTomlSection(header)
+  )
 }
 
 function isRuntimeHookTrustTomlSection(header: string): boolean {
@@ -222,6 +238,10 @@ function isRuntimeHookTrustTomlSection(header: string): boolean {
 
 function isRuntimeProjectTomlSection(header: string): boolean {
   return header.trimStart().startsWith('[projects.')
+}
+
+function isCodexMcpServerTomlSection(header: string): boolean {
+  return header.trimStart().startsWith('[mcp_servers.')
 }
 
 function getTomlSectionHeaderKey(header: string): string {

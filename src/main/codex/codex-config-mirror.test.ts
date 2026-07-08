@@ -175,6 +175,49 @@ describe('syncSystemConfigIntoManagedCodexHome', () => {
     expect(runtimeConfig.match(/\[projects\."\/repo"\]/g)?.length).toBe(1)
   })
 
+  it('preserves runtime MCP servers unless the system config defines the same server', () => {
+    mkdirSync(join(userDataDir, 'codex-runtime-home', 'home'), { recursive: true })
+    writeFileSync(
+      getRuntimeConfigPath(),
+      [
+        'model = "runtime-model"',
+        '',
+        '[mcp_servers.memory]',
+        'url = "http://127.0.0.1:8077/mcp"',
+        '',
+        '[mcp_servers.runtime_only]',
+        'url = "http://127.0.0.1:9999/mcp"',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+    writeFileSync(
+      getSystemConfigPath(),
+      [
+        'model = "system-model"',
+        '',
+        '[mcp_servers.memory]',
+        'url = "http://127.0.0.1:18077/mcp"',
+        '',
+        '[mcp_servers.system_only]',
+        'url = "http://127.0.0.1:18888/mcp"',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+
+    syncSystemConfigIntoManagedCodexHome()
+
+    const runtimeConfig = readFileSync(getRuntimeConfigPath(), 'utf-8')
+    expect(runtimeConfig).toContain('model = "system-model"')
+    expect(runtimeConfig).toContain('[mcp_servers.memory]')
+    expect(runtimeConfig).toContain('url = "http://127.0.0.1:18077/mcp"')
+    expect(runtimeConfig).toContain('[mcp_servers.runtime_only]')
+    expect(runtimeConfig).toContain('[mcp_servers.system_only]')
+    expect(runtimeConfig).not.toContain('url = "http://127.0.0.1:8077/mcp"')
+    expect(runtimeConfig.match(/\[mcp_servers\.memory\]/g)?.length).toBe(1)
+  })
+
   it('does not treat TOML table headers inside multiline strings as sections', () => {
     mkdirSync(join(userDataDir, 'codex-runtime-home', 'home'), { recursive: true })
     writeFileSync(

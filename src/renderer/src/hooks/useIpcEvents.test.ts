@@ -5,6 +5,7 @@ import {
   buildRuntimeClientEventEnvironmentKey,
   buildNewWorkspaceShortcutModalData,
   getNewlyConnectedRuntimeEnvironmentIds,
+  getNewlyDisconnectedRuntimeEnvironmentIds,
   getRuntimeProjectRefreshEnvironmentIds,
   openNewWorkspaceFromShortcut,
   resolveBrowserSessionTabTarget,
@@ -54,6 +55,15 @@ describe('getNewlyConnectedRuntimeEnvironmentIds', () => {
       'env-a',
       'env-b'
     ])
+  })
+})
+
+describe('getNewlyDisconnectedRuntimeEnvironmentIds', () => {
+  it('returns only environments whose transport was just observed down', () => {
+    expect(getNewlyDisconnectedRuntimeEnvironmentIds(['env-a', 'env-b'], ['env-a'])).toEqual([
+      'env-b'
+    ])
+    expect(getNewlyDisconnectedRuntimeEnvironmentIds(['env-a'], ['env-a', 'env-b'])).toEqual([])
   })
 })
 
@@ -948,6 +958,7 @@ describe('useIpcEvents browser tab create routing', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -967,6 +978,7 @@ describe('useIpcEvents browser tab create routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: (
@@ -1167,6 +1179,7 @@ describe('useIpcEvents updater integration', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -1186,6 +1199,7 @@ describe('useIpcEvents updater integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -1409,6 +1423,7 @@ describe('useIpcEvents updater integration', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -1428,6 +1443,7 @@ describe('useIpcEvents updater integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -1698,7 +1714,8 @@ describe('useIpcEvents updater integration', () => {
       settings: {
         terminalFontSize: 13,
         experimentalNativeChat: false,
-        openAgentTabsInChatByDefault: false
+        openAgentTabsInChatByDefault: false,
+        activeRuntimeEnvironmentId: undefined as string | undefined
       }
     }
     const createTerminalListenerRef: {
@@ -1734,11 +1751,13 @@ describe('useIpcEvents updater integration', () => {
             afterTabId?: string
             targetGroupId?: string
             command?: string
+            cwd?: string
             launchConfig?: SleepingAgentLaunchConfig
             launchAgent?: TuiAgent
             title?: string
             activate?: boolean
             presentation?: 'background' | 'focused'
+            source?: 'runtime-session'
           }) => void)
         | null
     } = { current: null }
@@ -1838,6 +1857,7 @@ describe('useIpcEvents updater integration', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -1877,6 +1897,7 @@ describe('useIpcEvents updater integration', () => {
               afterTabId?: string
               targetGroupId?: string
               command?: string
+              cwd?: string
               launchConfig?: SleepingAgentLaunchConfig
               launchAgent?: TuiAgent
               title?: string
@@ -1910,6 +1931,7 @@ describe('useIpcEvents updater integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -2103,7 +2125,7 @@ describe('useIpcEvents updater integration', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-background-mount-terminal-worktree',
-        detail: { worktreeId: 'wt-3' }
+        detail: { worktreeId: 'wt-3', tabIds: ['tab-new'] }
       })
     )
     expect(setTabCustomTitle).toHaveBeenCalledWith('tab-new', 'Shell', {
@@ -2138,6 +2160,7 @@ describe('useIpcEvents updater integration', () => {
       targetGroupId: 'group-left',
       title: 'Codex',
       command: 'codex',
+      cwd: '/repo/packages/app',
       launchConfig: {
         agentArgs: '--model gpt-5',
         agentEnv: { CODEX_PROFILE: 'request' }
@@ -2150,7 +2173,8 @@ describe('useIpcEvents updater integration', () => {
       activate: false,
       recordInteraction: false,
       launchAgent: 'codex',
-      viewMode: 'chat'
+      viewMode: 'chat',
+      startupCwd: '/repo/packages/app'
     })
     expect(setActiveView).not.toHaveBeenCalled()
     expect(setActiveWorktree).not.toHaveBeenCalled()
@@ -2164,7 +2188,7 @@ describe('useIpcEvents updater integration', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-background-mount-terminal-worktree',
-        detail: { worktreeId: 'wt-2' }
+        detail: { worktreeId: 'wt-2', tabIds: ['tab-new'] }
       })
     )
     expect(setTabCustomTitle).toHaveBeenCalledWith('tab-new', 'Codex', {
@@ -2183,6 +2207,42 @@ describe('useIpcEvents updater integration', () => {
       tabId: 'tab-new',
       title: 'Codex'
     })
+
+    createTab.mockClear()
+    replyTerminalCreate.mockClear()
+    storeState.settings.activeRuntimeEnvironmentId = 'focused-runtime'
+    requestTerminalCreateListenerRef.current({
+      requestId: 'req-runtime-session',
+      worktreeId: 'wt-2',
+      targetGroupId: 'group-left',
+      title: 'Runtime Terminal',
+      command: 'codex',
+      activate: true,
+      source: 'runtime-session'
+    })
+
+    expect(createTab).toHaveBeenCalledWith('wt-2', 'group-left', undefined, undefined)
+    expect(replyTerminalCreate).toHaveBeenCalledWith({
+      requestId: 'req-runtime-session',
+      tabId: 'tab-new',
+      title: 'Runtime Terminal'
+    })
+
+    createTab.mockClear()
+    replyTerminalCreate.mockClear()
+    storeState.settings.activeRuntimeEnvironmentId = 'focused-runtime'
+    requestTerminalCreateListenerRef.current({
+      requestId: 'req-runtime-blocked',
+      worktreeId: 'wt-2',
+      title: 'Blocked Local Terminal'
+    })
+
+    expect(createTab).not.toHaveBeenCalled()
+    expect(replyTerminalCreate).toHaveBeenCalledWith({
+      requestId: 'req-runtime-blocked',
+      error: 'Local terminal creation is unavailable while a remote runtime is active'
+    })
+    storeState.settings.activeRuntimeEnvironmentId = undefined
 
     if (typeof focusTerminalListenerRef.current !== 'function') {
       throw new Error('Expected focus-terminal listener to be registered')
@@ -2693,6 +2753,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -2722,6 +2783,7 @@ describe('useIpcEvents browser tab close routing', () => {
             return () => {}
           },
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3180,6 +3242,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -3199,6 +3262,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3395,6 +3459,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -3414,6 +3479,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3605,6 +3671,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -3624,6 +3691,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3833,6 +3901,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -3861,6 +3930,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3955,7 +4025,6 @@ describe('useIpcEvents CLI-created worktree activation', () => {
     expect(activateAndRevealWorktree).toHaveBeenCalledTimes(1)
     expect(activateAndRevealWorktree).toHaveBeenCalledWith('wt-new', {
       setup,
-      sidebarRevealBehavior: 'auto',
       notifyHostRuntime: false
     })
 
@@ -4087,6 +4156,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -4106,6 +4176,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -4318,6 +4389,7 @@ describe('useIpcEvents agent status snapshot integration', () => {
           onToggleWorktreePalette: () => () => {},
           onToggleFloatingTerminal: () => () => {},
           onOpenQuickOpen: () => () => {},
+          onToggleQuickCommandsMenu: () => () => {},
           onOpenNewWorkspace: () => () => {},
           onOpenTasks: () => () => {},
           onJumpToWorktreeIndex: () => () => {},
@@ -4337,6 +4409,7 @@ describe('useIpcEvents agent status snapshot integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -5934,6 +6007,138 @@ describe('useIpcEvents agent status snapshot integration', () => {
       expectWorktreeRouting('wt-1'),
       undefined
     )
+  })
+
+  it('accepts WSL-relayed status events for a local repo (wsl:* is transport provenance, not ownership)', async () => {
+    const setAgentStatus = vi.fn()
+    const onSetListenerRef: { current: ((data: AgentStatusSetData) => void) | null } = {
+      current: null
+    }
+    const storeState: StoreLike = buildStoreState({
+      setAgentStatus,
+      workspaceSessionReady: true,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-future', ptyId: 'pty-1', worktreeId: 'wt-1', title: 'WSL Tab' }]
+      },
+      terminalLayoutsByTabId: {
+        'tab-future': {
+          root: { type: 'leaf', leafId: FUTURE_LEAF_ID },
+          activeLeafId: FUTURE_LEAF_ID,
+          expandedLeafId: null
+        }
+      },
+      repos: [{ id: 'repo-1', connectionId: null }],
+      worktreesByRepo: { 'repo-1': [{ id: 'wt-1', repoId: 'repo-1' }] }
+    })
+
+    stubReactSyncEffect()
+    vi.doMock('../store', () => ({
+      useAppStore: {
+        subscribe: vi.fn(() => () => {}),
+        getState: () => storeState
+      }
+    }))
+    stubAuxiliaryModules()
+    vi.stubGlobal(
+      'window',
+      buildWindowApi({
+        onSet: (cb) => {
+          onSetListenerRef.current = cb
+          return () => {}
+        }
+      })
+    )
+
+    const { useIpcEvents } = await import('./useIpcEvents')
+
+    useIpcEvents()
+    await Promise.resolve()
+    if (typeof onSetListenerRef.current !== 'function') {
+      throw new Error('Expected agentStatus.onSet listener to be registered')
+    }
+
+    onSetListenerRef.current({
+      paneKey: FUTURE_PANE_KEY,
+      state: 'working',
+      prompt: 'wsl p',
+      agentType: 'claude',
+      worktreeId: 'wt-1',
+      connectionId: 'wsl:Ubuntu',
+      receivedAt: 1_700_000_000_000,
+      stateStartedAt: 1_699_999_999_000
+    })
+
+    expect(setAgentStatus).toHaveBeenCalledTimes(1)
+    expect(setAgentStatus).toHaveBeenCalledWith(
+      FUTURE_PANE_KEY,
+      expect.objectContaining({ state: 'working', prompt: 'wsl p', agentType: 'claude' }),
+      'WSL Tab',
+      { updatedAt: 1_700_000_000_000, stateStartedAt: 1_699_999_999_000 },
+      expectWorktreeRouting('wt-1'),
+      undefined
+    )
+  })
+
+  it('still rejects WSL-relayed status events against an SSH-owned repo', async () => {
+    const setAgentStatus = vi.fn()
+    const onSetListenerRef: { current: ((data: AgentStatusSetData) => void) | null } = {
+      current: null
+    }
+    const storeState: StoreLike = buildStoreState({
+      setAgentStatus,
+      workspaceSessionReady: true,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-future', ptyId: 'pty-1', worktreeId: 'wt-1', title: 'SSH Tab' }]
+      },
+      terminalLayoutsByTabId: {
+        'tab-future': {
+          root: { type: 'leaf', leafId: FUTURE_LEAF_ID },
+          activeLeafId: FUTURE_LEAF_ID,
+          expandedLeafId: null
+        }
+      },
+      repos: [{ id: 'repo-1', connectionId: 'ssh-1' }],
+      worktreesByRepo: { 'repo-1': [{ id: 'wt-1', repoId: 'repo-1' }] }
+    })
+
+    stubReactSyncEffect()
+    vi.doMock('../store', () => ({
+      useAppStore: {
+        subscribe: vi.fn(() => () => {}),
+        getState: () => storeState
+      }
+    }))
+    stubAuxiliaryModules()
+    vi.stubGlobal(
+      'window',
+      buildWindowApi({
+        onSet: (cb) => {
+          onSetListenerRef.current = cb
+          return () => {}
+        }
+      })
+    )
+
+    const { useIpcEvents } = await import('./useIpcEvents')
+
+    useIpcEvents()
+    await Promise.resolve()
+    if (typeof onSetListenerRef.current !== 'function') {
+      throw new Error('Expected agentStatus.onSet listener to be registered')
+    }
+
+    onSetListenerRef.current({
+      paneKey: FUTURE_PANE_KEY,
+      state: 'working',
+      prompt: 'wsl p',
+      agentType: 'claude',
+      worktreeId: 'wt-1',
+      connectionId: 'wsl:Ubuntu',
+      receivedAt: 1_700_000_000_000,
+      stateStartedAt: 1_699_999_999_000
+    })
+
+    expect(setAgentStatus).not.toHaveBeenCalled()
   })
 
   it('still rejects remote status events once the pane resolves to a local repo', async () => {

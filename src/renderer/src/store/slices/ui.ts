@@ -89,7 +89,8 @@ import type { OrcaHookScriptKind } from '../../lib/orca-hook-trust'
 import type { SettingsNavTarget } from '@/lib/settings-navigation-types'
 import {
   filterSetupScriptPromptDismissalsToValidRepos,
-  getSetupScriptPromptDismissalKey
+  getSetupScriptPromptDismissalKey,
+  sanitizeSetupScriptPromptDismissals
 } from '../../lib/setup-script-prompt'
 import { DEFAULT_PET_ID, isBundledPetId } from '../../components/pet/pet-models'
 import { revokeCustomPetBlobUrl } from '../../components/pet/pet-blob-cache'
@@ -112,14 +113,12 @@ import { translate } from '@/i18n/i18n'
 
 export type PendingSidebarWorktreeReveal = {
   worktreeId: string
-  behavior: 'auto' | 'smooth'
   highlight?: boolean
   beginRename?: boolean
 }
 
 export type PendingSidebarRowReveal = {
   rowKey: string
-  behavior: 'auto' | 'smooth'
   highlight?: boolean
 }
 
@@ -263,6 +262,8 @@ function migrateStatusBarItems(items: readonly string[] | undefined): StatusBarI
 
 const DEFAULT_ON_PORTS_STATUS_BAR_ITEM: StatusBarItem = 'ports'
 const DEFAULT_ON_KIMI_STATUS_BAR_ITEM: StatusBarItem = 'kimi'
+const DEFAULT_ON_MINIMAX_STATUS_BAR_ITEM: StatusBarItem = 'minimax'
+const DEFAULT_ON_GROK_STATUS_BAR_ITEM: StatusBarItem = 'grok'
 
 function normalizeHydratedVisibleWorkspaceHostIds(ui: PersistedUIState): VisibleWorkspaceHostIds {
   const visibleHostIds = normalizeVisibleExecutionHostIds(ui.visibleWorkspaceHostIds)
@@ -348,17 +349,54 @@ function collectAcknowledgedAgentNotificationId({
   }
 }
 
-function filterTrustedOrcaHooksToValidRepos(
-  trust: PersistedTrustedOrcaHooks,
-  validRepoIds: Set<string>
-): PersistedTrustedOrcaHooks {
+function isPlainPersistedRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function sanitizePersistedRepoIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((repoId): repoId is string => typeof repoId === 'string')
+}
+
+function sanitizeTrustedOrcaHooks(trust: unknown): PersistedTrustedOrcaHooks {
+  if (!isPlainPersistedRecord(trust)) {
+    return {}
+  }
   const next: PersistedTrustedOrcaHooks = {}
   for (const [repoId, entry] of Object.entries(trust)) {
+    if (!isSafePersistedRecordKey(repoId) || !isPlainPersistedRecord(entry)) {
+      continue
+    }
+    next[repoId] = entry as PersistedTrustedOrcaHooks[string]
+  }
+  return next
+}
+
+function filterTrustedOrcaHooksToValidRepos(
+  trust: unknown,
+  validRepoIds: Set<string>
+): PersistedTrustedOrcaHooks {
+  const sanitized = sanitizeTrustedOrcaHooks(trust)
+  const next: PersistedTrustedOrcaHooks = {}
+  for (const [repoId, entry] of Object.entries(sanitized)) {
     if (validRepoIds.has(repoId)) {
       next[repoId] = entry
     }
   }
   return next
+}
+
+function hydrateTrustedOrcaHooks(
+  trust: unknown,
+  validRepoIds: Set<string>
+): PersistedTrustedOrcaHooks {
+  const sanitized = sanitizeTrustedOrcaHooks(trust)
+  if (validRepoIds.size === 0) {
+    return sanitized
+  }
+  return filterTrustedOrcaHooksToValidRepos(sanitized, validRepoIds)
 }
 
 function isSafePersistedRecordKey(key: string): boolean {
@@ -706,6 +744,7 @@ export type UISlice = {
     | 'create-worktree'
     | 'edit-meta'
     | 'delete-worktree'
+    | 'forget-ssh-workspace'
     | 'confirm-add-project-from-folder'
     | 'confirm-non-git-folder'
     | 'confirm-remove-folder'
@@ -857,7 +896,6 @@ export type UISlice = {
   revealWorktreeInSidebar: (
     worktreeId: string,
     options?: {
-      behavior?: PendingSidebarWorktreeReveal['behavior']
       highlight?: boolean
       beginRename?: boolean
     }
@@ -865,7 +903,6 @@ export type UISlice = {
   revealSidebarRow: (
     rowKey: string,
     options?: {
-      behavior?: PendingSidebarRowReveal['behavior']
       highlight?: boolean
     }
   ) => void
@@ -949,7 +986,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       targets.some((target) => target.status === 'eligible') &&
       (previousMode?.id !== args.id || previousMode.worktreeId !== args.worktreeId)
     ) {
-      get().revealWorktreeInSidebar(args.worktreeId, { behavior: 'auto', highlight: true })
+      get().revealWorktreeInSidebar(args.worktreeId, { highlight: true })
     }
   },
   closeAgentSendPopoverTargetMode: (id, instanceId) =>
@@ -2165,7 +2202,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set({
       pendingRevealWorktree: {
         worktreeId,
-        behavior: options?.behavior ?? 'smooth',
         ...(options?.highlight ? { highlight: true } : {}),
         ...(options?.beginRename ? { beginRename: true } : {})
       }
@@ -2174,7 +2210,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set({
       pendingRevealSidebarRow: {
         rowKey,
-        behavior: options?.behavior ?? 'smooth',
         ...(options?.highlight === false ? {} : { highlight: true })
       }
     }),
@@ -2191,6 +2226,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   hydratePersistedUI: (ui) =>
     set((s) => {
       const validRepoIds = new Set(s.repos.map((repo) => repo.id))
+      const persistedFilterRepoIds = sanitizePersistedRepoIds(ui.filterRepoIds)
       // Why: persisted UI from pre-rename builds used sidekick* keys. Read
       // those only as fallbacks so new pet* writes win immediately after upgrade.
       const customPets = Array.isArray(ui.customPets)
@@ -2218,15 +2254,28 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         ui._kimiStatusBarDefaultAdded || statusBarItemsWithPorts.includes('kimi')
           ? statusBarItemsWithPorts
           : [...statusBarItemsWithPorts, DEFAULT_ON_KIMI_STATUS_BAR_ITEM]
+      const statusBarItemsWithMiniMax =
+        ui._minimaxStatusBarDefaultAdded || statusBarItems.includes('minimax')
+          ? statusBarItems
+          : [...statusBarItems, DEFAULT_ON_MINIMAX_STATUS_BAR_ITEM]
+      const statusBarItemsWithGrok =
+        ui._grokStatusBarDefaultAdded || statusBarItemsWithMiniMax.includes('grok')
+          ? statusBarItemsWithMiniMax
+          : [...statusBarItemsWithMiniMax, DEFAULT_ON_GROK_STATUS_BAR_ITEM]
       if (
-        (!ui._portsStatusBarDefaultAdded || !ui._kimiStatusBarDefaultAdded) &&
+        (!ui._portsStatusBarDefaultAdded ||
+          !ui._kimiStatusBarDefaultAdded ||
+          !ui._minimaxStatusBarDefaultAdded ||
+          !ui._grokStatusBarDefaultAdded) &&
         typeof window !== 'undefined'
       ) {
         window.api.ui
           .set({
-            statusBarItems,
+            statusBarItems: statusBarItemsWithGrok,
             _portsStatusBarDefaultAdded: true,
-            _kimiStatusBarDefaultAdded: true
+            _kimiStatusBarDefaultAdded: true,
+            _minimaxStatusBarDefaultAdded: true,
+            _grokStatusBarDefaultAdded: true
           })
           .catch(console.error)
       }
@@ -2275,7 +2324,12 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         hideDefaultBranchWorkspace: ui.hideDefaultBranchWorkspace ?? false,
         hideAutomationGeneratedWorkspaces: ui.hideAutomationGeneratedWorkspaces === true,
         showDotfilesByWorktree: sanitizeShowDotfilesByWorktree(ui.showDotfilesByWorktree),
-        filterRepoIds: (ui.filterRepoIds ?? []).filter((repoId) => validRepoIds.has(repoId)),
+        // Why: startup hydrates UI before repo catalogs now. With no catalog
+        // loaded yet, defer repo-filter validation to the all-host repo refresh.
+        filterRepoIds:
+          validRepoIds.size === 0
+            ? persistedFilterRepoIds
+            : persistedFilterRepoIds.filter((repoId) => validRepoIds.has(repoId)),
         collapsedGroups: new Set(ui.collapsedGroups ?? []),
         uiZoomLevel: ui.uiZoomLevel ?? 0,
         editorFontZoomLevel: ui.editorFontZoomLevel ?? 0,
@@ -2286,7 +2340,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         workspaceBoardOpacity: clampWorkspaceBoardOpacity(ui.workspaceBoardOpacity),
         workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(ui.workspaceBoardColumnWidth),
         syncTaskStatusFromWorkspaceBoard: ui.syncTaskStatusFromWorkspaceBoard === true,
-        statusBarItems,
+        statusBarItems: statusBarItemsWithGrok,
         statusBarVisible: ui.statusBarVisible ?? true,
         // Why: absent → true so existing users see the pet the first time
         // they enable the experimental flag. Only an explicit Hide pet
@@ -2324,14 +2378,14 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
           typeof ui.contextualToursAutoEligible === 'boolean'
             ? ui.contextualToursAutoEligible
             : null,
-        trustedOrcaHooks: filterTrustedOrcaHooksToValidRepos(
-          ui.trustedOrcaHooks ?? {},
-          validRepoIds
-        ),
-        setupScriptPromptDismissedRepoIds: filterSetupScriptPromptDismissalsToValidRepos(
-          ui.setupScriptPromptDismissedRepoIds,
-          validRepoIds
-        ),
+        trustedOrcaHooks: hydrateTrustedOrcaHooks(ui.trustedOrcaHooks, validRepoIds),
+        setupScriptPromptDismissedRepoIds:
+          validRepoIds.size === 0
+            ? sanitizeSetupScriptPromptDismissals(ui.setupScriptPromptDismissedRepoIds)
+            : filterSetupScriptPromptDismissalsToValidRepos(
+                ui.setupScriptPromptDismissedRepoIds,
+                validRepoIds
+              ),
         setupGuideSidebarDismissed: ui.setupGuideSidebarDismissed === true,
         setupGuideBrowserMilestoneMigrated: ui.setupGuideBrowserMilestoneMigrated === true,
         setupGuideBrowserMilestoneLegacyComplete:

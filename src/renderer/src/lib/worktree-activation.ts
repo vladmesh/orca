@@ -11,7 +11,10 @@ import type {
 } from '../../../shared/types'
 import type { EventProps } from '../../../shared/telemetry-events'
 import type { StartupCommandDelivery } from '../../../shared/codex-startup-delivery'
-import type { SleepingAgentLaunchConfig } from '../../../shared/agent-session-resume'
+import type {
+  AgentProviderSessionMetadata,
+  SleepingAgentLaunchConfig
+} from '../../../shared/agent-session-resume'
 import { shouldAutoCreateInitialTerminal } from '@/components/terminal/initial-terminal'
 import { buildSetupRunnerCommand } from './setup-runner'
 import { createSequencedSetupAgentCommands } from '../../../shared/setup-agent-sequencing'
@@ -22,7 +25,6 @@ import { CLIENT_PLATFORM } from './new-workspace'
 import { tuiAgentToAgentKind } from './telemetry'
 import { agentKindToTuiAgent } from '../../../shared/agent-kind'
 import { useAppStore } from '@/store'
-import type { PendingSidebarWorktreeReveal } from '@/store/slices/ui'
 import { tabHasLivePty } from '@/lib/tab-has-live-pty'
 import {
   activateWebRuntimeSessionWorktree,
@@ -46,6 +48,7 @@ import {
 import { isTuiAgent } from '../../../shared/tui-agent-config'
 import { repoIsRemote } from '../../../shared/agent-launch-remote'
 import { resumeSleepingAgentSessionsForWorktree } from '@/lib/resume-sleeping-agent-session'
+import { queueHookCommandsForFirstWorktreeTab } from '@/lib/hook-command-delayed-delivery'
 import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
 import {
   getRuntimeEnvironmentIdForWorktree,
@@ -70,8 +73,10 @@ export type WorktreeStartupPayload = {
   command: string
   env?: Record<string, string>
   launchConfig?: SleepingAgentLaunchConfig
+  resumeProviderSession?: AgentProviderSessionMetadata
   launchToken?: string
   launchAgent?: TuiAgent
+  draftPrompt?: string
   startupCommandDelivery?: StartupCommandDelivery
   initialAgentStatus?: { agent: TuiAgent; prompt: string }
   telemetry?: AgentStartedTelemetry
@@ -116,8 +121,10 @@ type WorktreeActivationStore = Partial<WorktreeRuntimeOwnerState> & {
       command: string
       env?: Record<string, string>
       launchConfig?: SleepingAgentLaunchConfig
+      resumeProviderSession?: AgentProviderSessionMetadata
       launchToken?: string
       launchAgent?: TuiAgent
+      draftPrompt?: string
       initialAgentStatus?: { agent: TuiAgent; prompt: string }
       showSessionRestoredBanner?: boolean
       telemetry?: AgentStartedTelemetry
@@ -175,7 +182,6 @@ function ensureFolderWorkspaceInitialTerminal(
 export function activateAndRevealFolderWorkspace(
   folderWorkspaceId: string,
   opts?: {
-    sidebarRevealBehavior?: PendingSidebarWorktreeReveal['behavior']
     startup?: WorktreeStartupPayload
     runtimeEnvironmentId?: string | null
   }
@@ -219,11 +225,7 @@ export function activateAndRevealFolderWorkspace(
   resumeSleepingAgentSessionsForWorktree(workspaceKey)
   const primaryTabId = ensureFolderWorkspaceInitialTerminal(folderWorkspace, opts?.startup)
 
-  if (opts?.sidebarRevealBehavior) {
-    state.revealWorktreeInSidebar(workspaceKey, { behavior: opts.sidebarRevealBehavior })
-  } else {
-    state.revealWorktreeInSidebar(workspaceKey)
-  }
+  state.revealWorktreeInSidebar(workspaceKey)
 
   return { primaryTabId }
 }
@@ -281,7 +283,6 @@ export function activateAndRevealWorktree(
     setup?: WorktreeSetupLaunch
     defaultTabs?: WorktreeDefaultTabsLaunch
     issueCommand?: IssueCommandLaunch
-    sidebarRevealBehavior?: PendingSidebarWorktreeReveal['behavior']
     notifyHostRuntime?: boolean
     revealInSidebar?: boolean
   }
@@ -381,11 +382,7 @@ export function activateAndRevealWorktree(
 
   // 6. Reveal in sidebar
   if (opts?.revealInSidebar !== false) {
-    if (opts?.sidebarRevealBehavior) {
-      state.revealWorktreeInSidebar(worktreeId, { behavior: opts.sidebarRevealBehavior })
-    } else {
-      state.revealWorktreeInSidebar(worktreeId)
-    }
+    state.revealWorktreeInSidebar(worktreeId)
   }
 
   if (opts?.notifyHostRuntime !== false) {
@@ -499,6 +496,24 @@ export function ensureWorktreeHasInitialTerminal(
       )
       return existingTerminalTabId
     }
+    if (setup || issueCommand) {
+      // Why: runtime-owned worktrees mirror their session tabs asynchronously,
+      // so right after create there is usually no tab yet. Hold the commands
+      // for the first mirrored tab instead of silently dropping them.
+      queueHookCommandsForFirstWorktreeTab({
+        worktreeId,
+        deliver: (state, firstTerminalTabId) =>
+          queueSetupAndIssueCommands(
+            state,
+            worktreeId,
+            firstTerminalTabId,
+            setup,
+            issueCommand,
+            wrappedSetupCommandStr,
+            opts
+          )
+      })
+    }
     return null
   }
 
@@ -552,7 +567,13 @@ export function ensureWorktreeHasInitialTerminal(
   const terminalTab = store.createTab(worktreeId, undefined, undefined, {
     pendingActivationSpawn: true,
     ...(launchAgent
-      ? { launchAgent, ...initialAgentTabViewModeProps(store.settings ?? null) }
+      ? {
+          launchAgent,
+          ...initialAgentTabViewModeProps(store.settings ?? null, {
+            agent: launchAgent,
+            promptDelivery: sequencedStartup?.draftPrompt != null ? 'draft' : undefined
+          })
+        }
       : {}),
     ...(opts?.activateCreatedTabs === false ? { activate: false } : {})
   })
@@ -611,7 +632,13 @@ function applyDefaultTerminalTabs(
       pendingActivationSpawn: true,
       recordInteraction: false,
       ...(launchAgent
-        ? { launchAgent, ...initialAgentTabViewModeProps(store.settings ?? null) }
+        ? {
+            launchAgent,
+            ...initialAgentTabViewModeProps(store.settings ?? null, {
+              agent: launchAgent,
+              promptDelivery: isStartupTab && startup?.draftPrompt != null ? 'draft' : undefined
+            })
+          }
         : {}),
       ...(opts?.activateCreatedTabs === false ? { activate: false } : {})
     })

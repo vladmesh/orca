@@ -5,11 +5,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { GitHandler } from './git-handler'
 import { RelayContext } from './context'
-import * as fs from 'fs/promises'
-import * as path from 'path'
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
-import { execFileSync } from 'child_process'
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { MAX_RENDERED_DIFF_COMBINED_CHARACTERS } from '../shared/large-diff-render-limit'
 import {
   createMockDispatcher,
@@ -24,7 +24,11 @@ type GitBufferSpyTarget = {
 }
 
 type GitSpyTarget = {
-  git(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }>
+  git(
+    args: string[],
+    cwd: string,
+    opts?: { signal?: AbortSignal }
+  ): Promise<{ stdout: string; stderr: string }>
 }
 
 function deferredRelayBuffer(content: string): {
@@ -1880,6 +1884,24 @@ describe('GitHandler', () => {
       })) as Record<string, unknown>[]
       expect(result.length).toBeGreaterThanOrEqual(1)
       expect(result[0].isMainWorktree).toBe(true)
+    })
+
+    it('passes request cancellation to the git worktree list subprocess', async () => {
+      const controller = new AbortController()
+      const gitSpy = vi
+        .spyOn(handler as unknown as GitSpyTarget, 'git')
+        .mockRejectedValue(new Error('aborted'))
+
+      const result = await dispatcher.callRequest(
+        'git.listWorktrees',
+        { repoPath: tmpDir },
+        { isStale: () => false, signal: controller.signal }
+      )
+
+      expect(result).toEqual([])
+      expect(gitSpy).toHaveBeenCalledWith(['worktree', 'list', '--porcelain', '-z'], tmpDir, {
+        signal: controller.signal
+      })
     })
 
     it.skipIf(process.platform === 'win32')(

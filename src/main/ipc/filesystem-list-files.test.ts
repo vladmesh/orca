@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Why: one Quick Open file-list suite covers both rg and git fallback process lifecycles. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const {
@@ -34,9 +33,9 @@ vi.mock('./local-worktree-runtime-options', () => ({
 }))
 
 import { listQuickOpenFiles } from './filesystem-list-files'
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import type { Store } from '../persistence'
-import type { ChildProcess } from 'child_process'
+import type { ChildProcess } from 'node:child_process'
 
 const SHA1 = '0123456789abcdef0123456789abcdef01234567'
 

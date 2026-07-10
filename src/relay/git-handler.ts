@@ -1,8 +1,8 @@
 /* eslint-disable max-lines -- Why: this relay handler centralizes the git RPC
 protocol surface so local and SSH git behavior stay in one dispatch table. */
-import { execFile, spawn, type ExecFileOptions } from 'child_process'
-import { promisify } from 'util'
-import * as path from 'path'
+import { execFile, spawn, type ExecFileOptions } from 'node:child_process'
+import { promisify } from 'node:util'
+import * as path from 'node:path'
 import type { RelayDispatcher, RequestContext } from './dispatcher'
 import type { RelayContext } from './context'
 import { expandTilde } from './context'
@@ -52,7 +52,7 @@ import {
   resolveEffectiveGitUpstream
 } from '../shared/git-effective-upstream'
 import { loadGitHistoryFromExecutor } from '../shared/git-history'
-import { buildRelayCommandEnv } from './relay-command-env'
+import { buildRelayGitEnv } from './relay-command-env'
 import {
   removeSafeUntrackedDiscardTarget,
   removeSafeUntrackedDiscardTargets
@@ -216,7 +216,7 @@ export class GitHandler {
     this.dispatcher.onRequest('git.rebaseFromBase', (p) => this.rebaseFromBase(p))
     this.dispatcher.onRequest('git.branchDiff', (p) => this.branchDiff(p))
     this.dispatcher.onRequest('git.commitDiff', (p) => this.commitDiff(p))
-    this.dispatcher.onRequest('git.listWorktrees', (p) => this.listWorktrees(p))
+    this.dispatcher.onRequest('git.listWorktrees', (p, context) => this.listWorktrees(p, context))
     this.dispatcher.onRequest('git.addWorktree', (p) => this.addWorktree(p))
     this.dispatcher.onRequest('git.removeWorktree', (p) => this.removeWorktree(p))
     this.dispatcher.onRequest('git.worktreeIsClean', (p) => this.worktreeIsClean(p))
@@ -254,7 +254,7 @@ export class GitHandler {
       stdin?: string
     }
   ): Promise<{ stdout: string; stderr: string }> {
-    const env = buildRelayCommandEnv()
+    const env = buildRelayGitEnv()
     if (opts?.disableOptionalLocks) {
       env.GIT_OPTIONAL_LOCKS = '0'
     }
@@ -281,7 +281,7 @@ export class GitHandler {
   private async gitBuffer(args: string[], cwd: string): Promise<Buffer> {
     const { stdout } = (await execFileAsync('git', args, {
       cwd,
-      env: buildRelayCommandEnv(),
+      env: buildRelayGitEnv(),
       encoding: 'buffer',
       maxBuffer: MAX_GIT_BUFFER
     })) as { stdout: Buffer }
@@ -1097,7 +1097,7 @@ export class GitHandler {
     return await new Promise((resolve, reject) => {
       const child = spawn('git', args, {
         cwd: expandTilde(cwd),
-        env: buildRelayCommandEnv(),
+        env: buildRelayGitEnv(),
         stdio: ['ignore', 'pipe', 'pipe']
       })
       let stdout = ''
@@ -1122,7 +1122,7 @@ export class GitHandler {
             this.dispatcher.notify('git.cloneProgress', {
               progressId,
               phase: match[1].trim(),
-              percent: parseInt(match[2], 10)
+              percent: Number.parseInt(match[2], 10)
             })
           }
         }
@@ -1263,10 +1263,12 @@ export class GitHandler {
     return normalized
   }
 
-  private async listWorktrees(params: Record<string, unknown>) {
+  private async listWorktrees(params: Record<string, unknown>, context?: RequestContext) {
     const repoPath = params.repoPath as string
     try {
-      const { stdout } = await this.git(['worktree', 'list', '--porcelain', '-z'], repoPath)
+      const { stdout } = await this.git(['worktree', 'list', '--porcelain', '-z'], repoPath, {
+        signal: context?.signal
+      })
       return this.normalizeMainWorktreePath(
         repoPath,
         parseWorktreeList(stdout, { nulDelimited: true })
@@ -1280,7 +1282,9 @@ export class GitHandler {
     // Why: `-z` keeps newline-containing SSH worktree paths intact, but older
     // Git rejects it. Fall back to the original line-block parser there.
     try {
-      const { stdout } = await this.git(['worktree', 'list', '--porcelain'], repoPath)
+      const { stdout } = await this.git(['worktree', 'list', '--porcelain'], repoPath, {
+        signal: context?.signal
+      })
       return this.normalizeMainWorktreePath(repoPath, parseWorktreeList(stdout))
     } catch {
       return []

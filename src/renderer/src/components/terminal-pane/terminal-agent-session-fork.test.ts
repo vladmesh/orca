@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Why: fork flow tests share a mocked store and launch harness. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
@@ -154,9 +153,7 @@ describe('forkAgentSessionFromPane', () => {
         launchSource: 'terminal_context_menu'
       })
     )
-    expect(mockActivateAndRevealWorktree).toHaveBeenCalledWith('wt-fork', {
-      sidebarRevealBehavior: 'auto'
-    })
+    expect(mockActivateAndRevealWorktree).toHaveBeenCalledWith('wt-fork')
     expect(mockToast.success).toHaveBeenCalledWith(
       'Top-level session fork opened in a new workspace'
     )
@@ -347,9 +344,7 @@ describe('forkAgentSessionFromPane', () => {
       undefined
     )
     expect(mockLaunchAgentInNewTab).not.toHaveBeenCalled()
-    expect(mockActivateAndRevealWorktree).toHaveBeenCalledWith('wt-fork', {
-      sidebarRevealBehavior: 'auto'
-    })
+    expect(mockActivateAndRevealWorktree).toHaveBeenCalledWith('wt-fork')
     expect(mockWriteClipboardText).toHaveBeenCalledWith(
       expect.stringContaining('Assistant: here is the current plan')
     )
